@@ -21,24 +21,20 @@ const OIWallChart: React.FC<OIWallChartProps> = ({
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<echarts.ECharts | null>(null);
 
-  // 估算平均 IV
   const averageIV = useMemo(() => {
     return estimateAverageIV(data);
   }, [data]);
 
-  // 过滤行权价，只保留现价附近合理范围的
   const filteredData = useMemo(() => {
     if (!currentPrice || data.length === 0) return data;
     return filterStrikesByPriceRange(data, currentPrice, averageIV, daysToExpiry);
   }, [data, currentPrice, averageIV, daysToExpiry]);
 
-  // 计算 OI Wall（使用过滤后的数据）
   const oiWallResults = useMemo(() => {
     if (!currentPrice || filteredData.length === 0) return [];
     return identifyOIWalls(filteredData, currentPrice);
   }, [filteredData, currentPrice]);
 
-  // 获取最强支撑和阻力
   const { strongestSupport, strongestResistance } = useMemo(() => {
     return getStrongestSupportResistance(oiWallResults);
   }, [oiWallResults]);
@@ -54,7 +50,6 @@ const OIWallChart: React.FC<OIWallChartProps> = ({
     const callOIs = filteredData.map((d) => d.callOI);
     const putOIs = filteredData.map((d) => d.putOI);
 
-    // 找到最接近现价的执行价索引
     let currentPriceIndex = -1;
     if (currentPrice && strikes.length > 0) {
       let minDiff = Infinity;
@@ -67,17 +62,18 @@ const OIWallChart: React.FC<OIWallChartProps> = ({
       });
     }
 
-    // 找到 Max Pain 的执行价索引（在过滤后的数据中）
     let maxPainIndex = -1;
-    if (maxPain && strikes.length > 0) {
-      strikes.forEach((strike, index) => {
-        if (parseInt(strike.toString()) === maxPain) {
-          maxPainIndex = index;
-        }
-      });
+
+    let supportIndex = -1;
+    if (strongestSupport && strikes.length > 0) {
+      supportIndex = strikes.findIndex(s => parseInt(s.toString()) === strongestSupport.strike);
     }
 
-    // 标记 OI Wall 的执行价
+    let resistanceIndex = -1;
+    if (strongestResistance && strikes.length > 0) {
+      resistanceIndex = strikes.findIndex(s => parseInt(s.toString()) === strongestResistance.strike);
+    }
+
     const callWallIndices: number[] = [];
     const putWallIndices: number[] = [];
     
@@ -90,41 +86,87 @@ const OIWallChart: React.FC<OIWallChartProps> = ({
       tooltip: {
         trigger: 'axis',
         axisPointer: { type: 'shadow' },
+        backgroundColor: 'rgba(255, 255, 255, 0.98)',
+        borderColor: '#d9d9d9',
+        borderWidth: 1,
+        padding: [12, 16],
+        textStyle: {
+          fontSize: 13,
+          lineHeight: 1.6,
+        },
         formatter: (params: any) => {
           const strike = params[0].axisValue;
           const callOI = params.find((p: any) => p.seriesName === 'Call OI (阻力)')?.value || 0;
           const putOI = params.find((p: any) => p.seriesName === 'Put OI (支撑)')?.value || 0;
           
-          // 查找该执行价的 OI Wall 信息
           const oiResult = oiWallResults.find(r => r.strike === parseInt(strike));
           let wallInfo = '';
           
           if (oiResult) {
             if (oiResult.isCallWall) {
-              wallInfo += `<div style="color:#ff4d4f;font-weight:bold">★ 强阻力位</div>`;
+              wallInfo += `<div style="color:#ff4d4f;font-weight:bold;margin-top:8px">★ 强阻力位</div>`;
             }
             if (oiResult.isPutWall) {
-              wallInfo += `<div style="color:#52c41a;font-weight:bold">★ 强支撑位</div>`;
+              wallInfo += `<div style="color:#52c41a;font-weight:bold;margin-top:8px">★ 强支撑位</div>`;
             }
           }
           
           return `
-            <div style="font-weight:bold;margin-bottom:5px">执行价: $${strike}</div>
-            <div style="color:#ff4d4f">Call OI (阻力): ${callOI.toLocaleString()}</div>
-            <div style="color:#52c41a">Put OI (支撑): ${putOI.toLocaleString()}</div>
+            <div style="font-weight:bold;font-size:14px;margin-bottom:8px;color:#333">执行价: $${strike}</div>
+            <div style="display:flex;justify-content:space-between;gap:16px">
+              <div style="color:#ff4d4f">
+                <span style="opacity:0.7">Call OI (阻力):</span> 
+                <span style="font-weight:bold">${callOI.toLocaleString()}</span>
+              </div>
+              <div style="color:#52c41a">
+                <span style="opacity:0.7">Put OI (支撑):</span> 
+                <span style="font-weight:bold">${putOI.toLocaleString()}</span>
+              </div>
+            </div>
             ${wallInfo}
           `;
         },
       },
       legend: {
-        data: ['Call OI (阻力)', 'Put OI (支撑)', '现价', 'Max Pain'],
+        data: ['Call OI (阻力)', 'Put OI (支撑)', '现价', '强支撑', '强阻力'],
         top: 10,
         textStyle: { fontSize: 12 },
+        selectedMode: true,
+        itemWidth: 12,
+        itemHeight: 12,
       },
+      dataZoom: [
+        {
+          type: 'inside',
+          xAxisIndex: 0,
+          start: 0,
+          end: 100,
+          zoomLock: false,
+        },
+        {
+          type: 'slider',
+          xAxisIndex: 0,
+          start: 0,
+          end: 100,
+          height: 20,
+          bottom: 10,
+          handleSize: '80%',
+          showDetail: true,
+          borderColor: '#d9d9d9',
+          fillerColor: 'rgba(24, 144, 255, 0.2)',
+          handleStyle: {
+            color: '#fff',
+            shadowBlur: 3,
+            shadowColor: 'rgba(0, 0, 0, 0.6)',
+            shadowOffsetX: 2,
+            shadowOffsetY: 2,
+          },
+        },
+      ],
       grid: {
         left: '3%',
         right: '4%',
-        bottom: '3%',
+        bottom: '10%',
         top: '15%',
         containLabel: true,
       },
@@ -135,12 +177,23 @@ const OIWallChart: React.FC<OIWallChartProps> = ({
           fontSize: 11,
           interval: Math.floor(strikes.length / 10),
           formatter: (value: string) => `$${value}`,
+          color: '#666',
         },
-        axisLine: { lineStyle: { color: '#d9d9d9' } },
+        axisLine: { 
+          lineStyle: { 
+            color: '#d9d9d9',
+            width: 2,
+          } 
+        },
         axisTick: { show: false },
-        name: 'Strike',
+        name: 'Strike Price',
         nameLocation: 'middle',
         nameGap: 30,
+        nameTextStyle: {
+          fontSize: 12,
+          color: '#999',
+          fontWeight: 500,
+        },
       },
       yAxis: {
         type: 'value',
@@ -152,12 +205,23 @@ const OIWallChart: React.FC<OIWallChartProps> = ({
             }
             return value.toString();
           },
+          color: '#666',
         },
         axisLine: { show: false },
-        splitLine: { lineStyle: { color: '#f0f0f0' } },
+        splitLine: { 
+          lineStyle: { 
+            color: '#f0f0f0',
+            type: 'dashed',
+          } 
+        },
         name: '持仓量 (OI)',
         nameLocation: 'middle',
         nameGap: 40,
+        nameTextStyle: {
+          fontSize: 12,
+          color: '#999',
+          fontWeight: 500,
+        },
       },
       series: [
         {
@@ -202,7 +266,6 @@ const OIWallChart: React.FC<OIWallChartProps> = ({
           barWidth: '40%',
           barGap: '0%',
         },
-        // 现价垂直虚线
         ...(currentPriceIndex >= 0 ? [{
           name: '现价' as const,
           type: 'line' as const,
@@ -215,6 +278,10 @@ const OIWallChart: React.FC<OIWallChartProps> = ({
               formatter: `现价 $${currentPrice}`,
               color: '#1890ff',
               fontSize: 11,
+              fontWeight: 'bold',
+              backgroundColor: 'rgba(24, 144, 255, 0.1)',
+              padding: [2, 6],
+              borderRadius: 4,
             },
             lineStyle: {
               color: '#1890ff',
@@ -228,28 +295,60 @@ const OIWallChart: React.FC<OIWallChartProps> = ({
             ],
           },
         }] : []),
-        // Max Pain 垂直虚线
-        ...(maxPainIndex >= 0 ? [{
-          name: 'Max Pain' as const,
+        ...(supportIndex >= 0 && strongestSupport ? [{
+          name: '强支撑' as const,
           type: 'line' as const,
           data: [],
           markLine: {
             symbol: ['none', 'none'],
             label: {
               show: true,
-              position: 'start',
-              formatter: `Max Pain $${maxPain}`,
-              color: '#faad14',
+              position: 'insideEndTop',
+              formatter: `强支撑 $${strongestSupport.strike}`,
+              color: '#52c41a',
               fontSize: 11,
+              fontWeight: 'bold',
+              backgroundColor: 'rgba(82, 196, 26, 0.1)',
+              padding: [2, 6],
+              borderRadius: 4,
             },
             lineStyle: {
-              color: '#faad14',
-              width: 2,
+              color: '#52c41a',
+              width: 3,
               type: 'dashed' as const,
             },
             data: [
               {
-                xAxis: maxPainIndex,
+                xAxis: supportIndex,
+              },
+            ],
+          },
+        }] : []),
+        ...(resistanceIndex >= 0 && strongestResistance ? [{
+          name: '强阻力' as const,
+          type: 'line' as const,
+          data: [],
+          markLine: {
+            symbol: ['none', 'none'],
+            label: {
+              show: true,
+              position: 'insideEndBottom',
+              formatter: `强阻力 $${strongestResistance.strike}`,
+              color: '#ff4d4f',
+              fontSize: 11,
+              fontWeight: 'bold',
+              backgroundColor: 'rgba(255, 77, 79, 0.1)',
+              padding: [2, 6],
+              borderRadius: 4,
+            },
+            lineStyle: {
+              color: '#ff4d4f',
+              width: 3,
+              type: 'dashed' as const,
+            },
+            data: [
+              {
+                xAxis: resistanceIndex,
               },
             ],
           },
@@ -268,7 +367,7 @@ const OIWallChart: React.FC<OIWallChartProps> = ({
     return () => {
       window.removeEventListener('resize', handleResize);
     };
-  }, [data, maxPain, currentPrice, oiWallResults, strongestSupport, strongestResistance]);
+  }, [data, currentPrice, oiWallResults, strongestSupport, strongestResistance]);
 
   return (
     <Card
@@ -277,8 +376,9 @@ const OIWallChart: React.FC<OIWallChartProps> = ({
           <div>OI Wall - 持仓墙 (支撑/阻力)</div>
           {strongestSupport && strongestResistance && (
             <div style={{ fontSize: '12px', fontWeight: 'normal', marginTop: '4px', color: '#666' }}>
-              强支撑: ${strongestSupport.strike} ({formatOI(strongestSupport.putOI)}) | 
-              强阻力: ${strongestResistance.strike} ({formatOI(strongestResistance.callOI)})
+              <span style={{ color: '#52c41a', fontWeight: 500 }}>强支撑: ${strongestSupport.strike} ({formatOI(strongestSupport.putOI)})</span>
+              <span style={{ margin: '0 12px' }}>|</span>
+              <span style={{ color: '#ff4d4f', fontWeight: 500 }}>强阻力: ${strongestResistance.strike} ({formatOI(strongestResistance.callOI)})</span>
             </div>
           )}
         </div>

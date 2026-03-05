@@ -63,7 +63,7 @@ const PCRChart: React.FC<PCRChartProps> = ({ oiData, currentPrice, putCallRatio 
       grid: {
         left: '3%',
         right: '4%',
-        bottom: '10%',
+        bottom: '15%',
         top: '15%',
         containLabel: true,
       },
@@ -71,7 +71,18 @@ const PCRChart: React.FC<PCRChartProps> = ({ oiData, currentPrice, putCallRatio 
         trigger: 'axis',
         axisPointer: {
           type: 'cross',
+          crossStyle: {
+            color: '#999',
+            type: 'dashed'
+          }
         },
+        backgroundColor: 'rgba(255, 255, 255, 0.95)',
+        borderColor: '#d9d9d9',
+        borderWidth: 1,
+        textStyle: {
+          color: '#333'
+        },
+        extraCssText: 'box-shadow: 0 2px 8px rgba(0,0,0,0.15); border-radius: 4px; padding: 8px 12px;',
         formatter: (params: any) => {
           const strike = params[0].axisValue;
           const pcrOI = params.find((p: any) => p.seriesName === 'PCR (OI)')?.value || 0;
@@ -79,10 +90,10 @@ const PCRChart: React.FC<PCRChartProps> = ({ oiData, currentPrice, putCallRatio 
           const zone = getPCRZoneInfo(pcrOI);
           
           return `
-            <div style="font-weight: bold; margin-bottom: 8px;">Strike: $${strike}</div>
-            <div style="color: #1890ff;">PCR (OI): ${pcrOI.toFixed(3)}</div>
-            <div style="color: #52c41a;">PCR (Volume): ${pcrVol.toFixed(3)}</div>
-            <div style="color: ${zone.color}; margin-top: 4px;">区间: ${zone.zone}</div>
+            <div style="font-weight: bold; margin-bottom: 8px; border-bottom: 1px solid #f0f0f0; padding-bottom: 4px;">Strike: $${strike}</div>
+            <div style="color: #1890ff; margin-bottom: 4px;"><b>PCR (OI):</b> ${pcrOI.toFixed(3)}</div>
+            <div style="color: #52c41a; margin-bottom: 4px;"><b>PCR (Volume):</b> ${pcrVol.toFixed(3)}</div>
+            <div style="color: ${zone.color};"><b>区间:</b> ${zone.zone}</div>
           `;
         },
       },
@@ -92,7 +103,38 @@ const PCRChart: React.FC<PCRChartProps> = ({ oiData, currentPrice, putCallRatio 
         textStyle: {
           fontSize: 11,
         },
+        selectedMode: true,
+        itemWidth: 12,
+        itemHeight: 12,
       },
+      dataZoom: [
+        {
+          type: 'inside',
+          xAxisIndex: 0,
+          start: 0,
+          end: 100,
+          zoomLock: false,
+        },
+        {
+          type: 'slider',
+          xAxisIndex: 0,
+          start: 0,
+          end: 100,
+          height: 20,
+          bottom: 10,
+          handleSize: '80%',
+          showDetail: true,
+          borderColor: '#d9d9d9',
+          fillerColor: 'rgba(24, 144, 255, 0.2)',
+          handleStyle: {
+            color: '#fff',
+            shadowBlur: 3,
+            shadowColor: 'rgba(0, 0, 0, 0.6)',
+            shadowOffsetX: 2,
+            shadowOffsetY: 2,
+          },
+        },
+      ],
       xAxis: {
         type: 'category',
         data: strikes,

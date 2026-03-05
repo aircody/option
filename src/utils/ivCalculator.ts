@@ -271,24 +271,39 @@ export function getIVTradingImplications(
   switch (vrpStatus) {
     case 'low':
       implications.push('波动率定价合理，可进行方向性交易');
+      implications.push('预期与实际接近');
       break;
     case 'normal':
+      implications.push('市场预期略高于历史波动');
       implications.push('适度正VRP，可考虑轻度波动率卖方策略');
       break;
     case 'high':
       implications.push('波动率卖方策略：卖出跨式/宽跨式期权，赚取波动率溢价');
+      implications.push('波动率定价偏贵，存在均值回归动力');
       implications.push('严格控制仓位（单策略仓位≤10%）');
+      implications.push('负Gamma环境下波动剧烈，设置止损（如标的突破关键OI Wall支撑/阻力位时平仓）');
       break;
     case 'extreme':
-      implications.push('极端高溢价，强烈建议波动率卖方策略');
-      implications.push('但必须设置严格止损，防范波动率进一步上行');
+      implications.push('极端高溢价，强烈建议波动率卖方策略，但必须设置严格止损，防范波动率进一步上行');
+      implications.push('波动率定价极端偏贵，市场情绪恐慌');
+      implications.push('短期视角：市场对波动的担忧存在情绪超调，波动率有向历史均值回归的动力');
+      implications.push('中期视角：若触发实质性风险事件，IV可能进一步上行；若风险落地，IV将快速回落');
       break;
   }
 
   // 组合分析
   if (pcrStatus === 'extreme_bearish' && (vrpStatus === 'high' || vrpStatus === 'extreme')) {
-    implications.push('高PCR + 正VRP组合：市场情绪恐慌性定价，反向看多胜率提升');
-    implications.push('建议买入虚值看涨期权（Call），规避负Gamma带来的短期暴跌风险');
+    implications.push('高PCR + 正VRP组合：市场情绪处于"恐慌性定价"，反向看多胜率提升但需承受高波动');
+    implications.push('方向性反向看多策略：买入虚值看涨期权（Call），而非直接买入现货（规避负Gamma带来的短期暴跌风险）');
+    implications.push('选择到期日1-2周的虚值Call，利用IV回落降低期权时间价值损耗');
+  }
+
+  if (vrpStatus === 'high' || vrpStatus === 'extreme') {
+    implications.push('永远不要在高正VRP下裸买期权');
+  }
+
+  if (vrpStatus === 'low') {
+    implications.push('不要在负VRP下裸卖期权');
   }
 
   return implications;

@@ -5,7 +5,7 @@ import { generateExpiryDateData, type ExpiryDateInfo } from '../utils/dateUtils'
 import { calculateMaxPain } from '../utils/maxPainCalculator';
 import { analyzeGEX, formatGEX } from '../utils/gexCalculator';
 import { analyzePCR, formatPCR } from '../utils/pcrCalculator';
-import { analyzeIV, formatIV } from '../utils/ivCalculator';
+import { analyzeIV, formatIV, getIVTradingImplications, analyzeVRPStatus } from '../utils/ivCalculator';
 
 // LongPort API 基础路径
 const LONGPORT_API_BASE = '/v1';
@@ -484,6 +484,17 @@ function analyzeIVWithApiData(
     skew25Delta,
   });
 
+  const vrpStatusInfo = analyzeVRPStatus(vrpPercent);
+  const tradingImplications = getIVTradingImplications(vrpStatusInfo.status, pcrStatus);
+  const riskWarnings: string[] = [];
+  
+  if (vrpStatusInfo.status === 'extreme') {
+    riskWarnings.push('极端高溢价，波动率可能进一步上行');
+  }
+  if (vrpPercent > 20) {
+    riskWarnings.push('VRP过高，注意波动率回归风险');
+  }
+
   return {
     atmIV,
     hv,
@@ -494,14 +505,11 @@ function analyzeIVWithApiData(
     skew25Delta,
     put25IV,
     call25IV,
-    status,
-    statusLabel,
-    description: `波动率风险溢价 ${vrpPercent.toFixed(2)}%，${statusLabel}`,
-    tradingImplications: [
-      vrpPercent > 15 ? '波动率定价偏贵，考虑卖出波动率策略' : '波动率定价合理',
-      '结合PCR和GEX综合判断',
-    ],
-    riskWarnings: [],
+    status: vrpStatusInfo.status,
+    statusLabel: vrpStatusInfo.statusLabel,
+    description: vrpStatusInfo.description,
+    tradingImplications,
+    riskWarnings,
   };
 }
 

@@ -139,21 +139,23 @@ export function getTradingImplications(status: string): string[] {
   switch (status) {
     case 'extreme_bullish':
       return [
-        '反向看空：市场极度乐观，警惕高位回调',
+        '反向看空：市场极度乐观，警惕高位回调（反向信号）',
         '考虑买入看跌期权或卖出看涨期权',
         '降低多头仓位',
         '设置严格止损',
+        '需结合VIX、Gamma Exposure等多指标综合判断',
+        '价格创新高但PCR同步走高是强见顶信号',
       ];
     case 'bullish':
       return [
-        '谨慎看多：市场乐观但不过度',
+        '谨慎看空：市场乐观但不过度',
         '维持正常仓位',
         '关注关键阻力位',
       ];
     case 'neutral':
       return [
         '均衡策略：多空平衡',
-        '区间交易',
+        '观望或均衡策略',
         '等待明确信号',
       ];
     case 'bearish':
@@ -164,12 +166,12 @@ export function getTradingImplications(status: string): string[] {
       ];
     case 'extreme_bearish':
       return [
-        '反向强看多：市场极度悲观，情绪见底信号',
-        '配置宽基指数看涨期权（SPY、QQQ）',
-        '回避基本面无问题的超跌标的',
-        '禁止盲目做空',
-        '仓位控制在50%以下',
-        '设置严格止损',
+        '反向强看多：市场极度悲观，情绪见底信号（核心信号）',
+        '指数层面：配置标普500 (SPY)、纳斯达克 (QQQ) 等宽基指数的看涨期权，或做多指数ETF',
+        '个股层面：回避基本面无问题的超跌标的，禁止盲目做空，避免在底部踏空',
+        '仓位控制：负Gamma环境下市场波动被剧烈放大，建议仓位控制在常规的50%以下',
+        '严格止损：设定严格止损，避免极端情绪持续恶化导致的短期回撤',
+        '综合验证：该信号需与OI Wall、Max Pain交叉验证，若极端看跌情绪与关键支撑位（OI Wall）、最大痛点重合，底部信号的有效性会进一步提升',
       ];
     default:
       return ['观望'];

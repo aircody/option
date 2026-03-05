@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useMemo } from 'react';
 import * as echarts from 'echarts';
 import { Card, Typography, Tag, Space, Divider, List, Row, Col, Statistic } from 'antd';
+import { getSkewTradingImplications, analyzeSkewStatus } from '../utils/skewCalculator';
 
 const { Text, Title } = Typography;
 
@@ -12,6 +13,7 @@ interface SkewChartProps {
   gammaExposure?: number;
   ivData?: any;
   optionChain?: any[];
+  pcrStatus?: string;
 }
 
 const SkewChart: React.FC<SkewChartProps> = ({
@@ -21,7 +23,8 @@ const SkewChart: React.FC<SkewChartProps> = ({
   pcr,
   gammaExposure,
   ivData,
-  optionChain
+  optionChain,
+  pcrStatus
 }) => {
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<echarts.ECharts | null>(null);
@@ -29,19 +32,37 @@ const SkewChart: React.FC<SkewChartProps> = ({
   const skew25Delta = useMemo(() => ivData?.skew25Delta || 0, [ivData]);
   const put25IV = useMemo(() => ivData?.put25IV || 0, [ivData]);
   const call25IV = useMemo(() => ivData?.call25IV || 0, [ivData]);
-  const status = useMemo(() => ivData?.status || 'normal', [ivData]);
-  const statusLabel = useMemo(() => ivData?.statusLabel || '正常', [ivData]);
-  const description = useMemo(() => ivData?.description || '', [ivData]);
-  const tradingImplications = useMemo(() => ivData?.tradingImplications || [], [ivData]);
-  const riskWarnings = useMemo(() => ivData?.riskWarnings || [], [ivData]);
-
   const skewPercent = skew25Delta * 100;
+  
+  const statusInfo = useMemo(() => analyzeSkewStatus(skewPercent), [skewPercent]);
+  const status = statusInfo.status;
+  const statusLabel = statusInfo.statusLabel;
+  const description = statusInfo.description;
+  
+  const tradingImplications = useMemo(() => {
+    return getSkewTradingImplications(status, skewPercent, pcrStatus);
+  }, [status, skewPercent, pcrStatus]);
+  
+  const riskWarnings = useMemo(() => {
+    const warnings: string[] = [];
+    if (status === 'extreme') {
+      warnings.push('极端偏斜，市场恐慌情绪严重');
+      warnings.push('若近期出现高影响事件（如美联储决议、财报），SKEW可能快速飙升，偏斜程度加剧，需及时调整对冲策略');
+    }
+    if (status === 'high' || status === 'extreme') {
+      warnings.push('SKEW仅反映期权市场的定价，若出现实质性下行事件（如宏观数据恶化），偏斜可能进一步扩大，需结合基本面综合判断');
+    }
+    if (status === 'high' || status === 'extreme') {
+      warnings.push('负Gamma环境下，期权买卖价差可能扩大，需优先选择流动性高的合约，避免滑点损失');
+    }
+    return warnings;
+  }, [status]);
 
-  const getSkewColor = (skew: number) => {
-    if (skew > 2) return '#ff4d4f';
-    if (skew > 0.5) return '#faad14';
-    if (skew < -2) return '#1890ff';
-    if (skew < -0.5) return '#52c41a';
+  const getSkewColor = (skewPercent: number) => {
+    if (skewPercent > 10) return '#ff4d4f';
+    if (skewPercent > 3) return '#faad14';
+    if (skewPercent < -10) return '#1890ff';
+    if (skewPercent < -3) return '#52c41a';
     return '#8c8c8c';
   };
 
@@ -87,7 +108,7 @@ const SkewChart: React.FC<SkewChartProps> = ({
       grid: {
         left: '3%',
         right: '4%',
-        bottom: '10%',
+        bottom: '15%',
         top: '15%',
         containLabel: true,
       },
@@ -95,16 +116,27 @@ const SkewChart: React.FC<SkewChartProps> = ({
         trigger: 'axis',
         axisPointer: {
           type: 'cross',
+          crossStyle: {
+            color: '#999',
+            type: 'dashed'
+          }
         },
+        backgroundColor: 'rgba(255, 255, 255, 0.95)',
+        borderColor: '#d9d9d9',
+        borderWidth: 1,
+        textStyle: {
+          color: '#333'
+        },
+        extraCssText: 'box-shadow: 0 2px 8px rgba(0,0,0,0.15); border-radius: 4px; padding: 8px 12px;',
         formatter: (params: any) => {
           const strike = params[0].axisValue;
           const callSkew = params.find((p: any) => p.seriesName === 'Call Skew')?.value || 0;
           const putSkew = params.find((p: any) => p.seriesName === 'Put Skew')?.value || 0;
 
           return `
-            <div style="font-weight: bold; margin-bottom: 8px;">Strike: $${strike}</div>
-            <div style="color: #ff4d4f;">Call Skew: ${callSkew >= 0 ? '+' : ''}${callSkew.toFixed(2)}%</div>
-            <div style="color: #52c41a;">Put Skew: ${putSkew >= 0 ? '+' : ''}${putSkew.toFixed(2)}%</div>
+            <div style="font-weight: bold; margin-bottom: 8px; border-bottom: 1px solid #f0f0f0; padding-bottom: 4px;">Strike: $${strike}</div>
+            <div style="color: #ff4d4f; margin-bottom: 4px;"><b>Call Skew:</b> ${callSkew >= 0 ? '+' : ''}${callSkew.toFixed(2)}%</div>
+            <div style="color: #52c41a;"><b>Put Skew:</b> ${putSkew >= 0 ? '+' : ''}${putSkew.toFixed(2)}%</div>
           `;
         },
       },
@@ -114,7 +146,38 @@ const SkewChart: React.FC<SkewChartProps> = ({
         textStyle: {
           fontSize: 11,
         },
+        selectedMode: true,
+        itemWidth: 12,
+        itemHeight: 12,
       },
+      dataZoom: [
+        {
+          type: 'inside',
+          xAxisIndex: 0,
+          start: 0,
+          end: 100,
+          zoomLock: false,
+        },
+        {
+          type: 'slider',
+          xAxisIndex: 0,
+          start: 0,
+          end: 100,
+          height: 20,
+          bottom: 10,
+          handleSize: '80%',
+          showDetail: true,
+          borderColor: '#d9d9d9',
+          fillerColor: 'rgba(24, 144, 255, 0.2)',
+          handleStyle: {
+            color: '#fff',
+            shadowBlur: 3,
+            shadowColor: 'rgba(0, 0, 0, 0.6)',
+            shadowOffsetX: 2,
+            shadowOffsetY: 2,
+          },
+        },
+      ],
       xAxis: {
         type: 'category',
         data: strikes,

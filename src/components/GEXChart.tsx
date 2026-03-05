@@ -48,7 +48,7 @@ const GEXChart: React.FC<GEXChartProps> = ({ oiData, currentPrice, gammaExposure
       grid: {
         left: '3%',
         right: '4%',
-        bottom: '10%',
+        bottom: '15%',
         top: '15%',
         containLabel: true,
       },
@@ -56,7 +56,18 @@ const GEXChart: React.FC<GEXChartProps> = ({ oiData, currentPrice, gammaExposure
         trigger: 'axis',
         axisPointer: {
           type: 'cross',
+          crossStyle: {
+            color: '#999',
+            type: 'dashed'
+          }
         },
+        backgroundColor: 'rgba(255, 255, 255, 0.95)',
+        borderColor: '#d9d9d9',
+        borderWidth: 1,
+        textStyle: {
+          color: '#333'
+        },
+        extraCssText: 'box-shadow: 0 2px 8px rgba(0,0,0,0.15); border-radius: 4px; padding: 8px 12px;',
         formatter: (params: any) => {
           const strike = params[0].axisValue;
           const totalGEX = params.find((p: any) => p.seriesName === 'Total GEX')?.value || 0;
@@ -64,10 +75,10 @@ const GEXChart: React.FC<GEXChartProps> = ({ oiData, currentPrice, gammaExposure
           const putGEX = params.find((p: any) => p.seriesName === 'Put GEX')?.value || 0;
           
           return `
-            <div style="font-weight: bold; margin-bottom: 8px;">Strike: $${strike}</div>
-            <div style="color: #722ed1;">Total GEX: ${totalGEX >= 0 ? '+' : ''}${totalGEX.toFixed(2)}B</div>
-            <div style="color: #ff4d4f;">Call GEX: +${callGEX.toFixed(2)}B</div>
-            <div style="color: #52c41a;">Put GEX: ${putGEX.toFixed(2)}B</div>
+            <div style="font-weight: bold; margin-bottom: 8px; border-bottom: 1px solid #f0f0f0; padding-bottom: 4px;">Strike: $${strike}</div>
+            <div style="color: #722ed1; margin-bottom: 4px;"><b>Total GEX:</b> ${totalGEX >= 0 ? '+' : ''}${totalGEX.toFixed(2)}B</div>
+            <div style="color: #ff4d4f; margin-bottom: 4px;"><b>Call GEX:</b> +${callGEX.toFixed(2)}B</div>
+            <div style="color: #52c41a;"><b>Put GEX:</b> ${putGEX.toFixed(2)}B</div>
           `;
         },
       },
@@ -77,7 +88,38 @@ const GEXChart: React.FC<GEXChartProps> = ({ oiData, currentPrice, gammaExposure
         textStyle: {
           fontSize: 11,
         },
+        selectedMode: true,
+        itemWidth: 12,
+        itemHeight: 12,
       },
+      dataZoom: [
+        {
+          type: 'inside',
+          xAxisIndex: 0,
+          start: 0,
+          end: 100,
+          zoomLock: false,
+        },
+        {
+          type: 'slider',
+          xAxisIndex: 0,
+          start: 0,
+          end: 100,
+          height: 20,
+          bottom: 10,
+          handleSize: '80%',
+          showDetail: true,
+          borderColor: '#d9d9d9',
+          fillerColor: 'rgba(24, 144, 255, 0.2)',
+          handleStyle: {
+            color: '#fff',
+            shadowBlur: 3,
+            shadowColor: 'rgba(0, 0, 0, 0.6)',
+            shadowOffsetX: 2,
+            shadowOffsetY: 2,
+          },
+        },
+      ],
       xAxis: {
         type: 'category',
         data: strikes,

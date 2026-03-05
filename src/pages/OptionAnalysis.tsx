@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Layout, Typography, Spin, Row, Col, Divider, message, Tabs } from 'antd';
 import SidebarMenu from '../components/SidebarMenu';
 import SymbolSelector from '../components/SymbolSelector';
@@ -13,6 +13,7 @@ import SkewChart from '../components/SkewChart';
 import StrategyGuide from '../components/StrategyGuide';
 import Settings from './Settings';
 import { fetchOptionAnalysis, fetchExpiryDates } from '../services/optionService';
+import { analyzePCRStatus } from '../utils/pcrCalculator';
 import type { OptionAnalysisData, ExpiryDate } from '../types';
 
 const { Content, Sider } = Layout;
@@ -171,6 +172,12 @@ const OptionAnalysis: React.FC = () => {
     return selected ? selected.daysToExpiry : 30;
   };
 
+  // 计算PCR状态
+  const pcrStatus = useMemo(() => {
+    if (!data) return undefined;
+    return data.pcrData?.status;
+  }, [data]);
+
   const renderContent = () => {
     if (selectedMenuKey === 'settings') {
       return <Settings />;
@@ -303,6 +310,7 @@ const OptionAnalysis: React.FC = () => {
                             gammaExposure={data.gammaExposure}
                             ivData={data.ivData}
                             optionChain={data.optionChain}
+                            pcrStatus={pcrStatus}
                           />
                         </Col>
                       </Row>
@@ -316,6 +324,13 @@ const OptionAnalysis: React.FC = () => {
                     <StrategyGuide
                       oiData={data.oiData}
                       currentPrice={data.lastPrice}
+                      gammaExposure={data.gammaExposure}
+                      putCallRatio={data.putCallRatio}
+                      atmIv={data.atmIv}
+                      hv={data.hv}
+                      vrp={data.vrp}
+                      skew={data.skew}
+                      maxPain={data.maxPain}
                     />
                   ),
                 },

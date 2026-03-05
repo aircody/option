@@ -132,34 +132,59 @@ export function analyzeSkewStatus(skew25Delta: number): {
 /**
  * 获取交易启示
  * @param status Skew 状态
+ * @param skewPercent SKEW百分比
+ * @param pcrStatus PCR状态（可选，用于组合分析）
  * @returns 交易启示列表
  */
-export function getSkewTradingImplications(status: string): string[] {
+export function getSkewTradingImplications(
+  status: string, 
+  skewPercent: number = 0,
+  pcrStatus?: string
+): string[] {
+  const implications: string[] = [];
+
   switch (status) {
     case 'low':
-      return [
-        '市场乐观，可考虑做多',
-        'Put 期权相对便宜，可考虑买入保护',
-      ];
+      implications.push('SKEW偏斜向下，市场更担心上行风险（较少见）');
+      implications.push('可考虑波动率套利：利用Call IV相对贵、Put IV相对便宜的偏斜，构建风险逆转套利');
+      implications.push('操作：买入25Δ Put，卖出25Δ Call，收取Call IV溢价，同时锁定下行收益');
+      break;
     case 'normal':
-      return [
-        '市场情绪中性',
-        '按正常策略操作',
-      ];
+      implications.push('偏度正常，市场对上行和下行风险定价相对均衡');
+      implications.push('按正常策略操作，无特别偏斜机会');
+      break;
     case 'high':
-      return [
-        '市场谨慎，注意风险',
-        '可考虑卖出 Put 赚取高溢价',
-      ];
+      implications.push('适度下行偏斜，市场对下行风险有合理担忧，偏斜适度');
+      implications.push('波动率套利策略：利用Put IV相对贵、Call IV相对便宜的偏斜，构建风险逆转套利，博弈偏斜收敛');
+      implications.push('操作：卖出25Δ Put，买入25Δ Call，收取Put IV溢价，同时锁定上行收益');
+      implications.push('风控：负Gamma环境下，若下行风险被触发，Put IV可能进一步飙升，将单策略仓位控制在10%以内，设置止损（如标的跌破关键支撑位时平仓）');
+      implications.push('方向性优化策略：适度下行偏斜 + 高PCR，说明市场对下行的定价已部分反映，可利用Put IV溢价降低看多成本');
+      implications.push('操作：卖出虚值Put（如25Δ Put），收取权利金，若标的未跌破行权价，可赚取溢价；或买入虚值Call（利用Call IV相对便宜），降低看多成本');
+      implications.push('合约选择：优先选择流动性高的合约（买卖价差≤0.5%），避免流动性风险');
+      break;
     case 'extreme':
-      return [
-        '市场恐慌，反向看多',
-        '可考虑卖出 Put 赚取极端溢价',
-        '但需设置严格止损',
-      ];
-    default:
-      return ['观望'];
+      implications.push('极端下行偏斜，市场对下行风险极度担忧，处于恐慌状态');
+      implications.push('SKEW的"极端"属性说明这种担忧是黑天鹅式的恐慌');
+      implications.push('风险对冲策略：利用SKEW的正偏斜，优化下行对冲成本');
+      implications.push('操作：若需对冲组合下行风险，可选择买入25Δ Put以外的更虚值Put（如10Δ Put），其IV溢价相对较低，可降低对冲成本');
+      break;
   }
+
+  if (pcrStatus === 'extreme_bearish' && (status === 'high' || status === 'extreme')) {
+    implications.push('情绪验证：正SKEW与高PCR形成共振，验证了市场对下行风险的担忧');
+    implications.push('波动定价：在ATM IV显著高于HV的背景下，SKEW的正偏斜说明波动率溢价主要由下行Put期权驱动，市场对"暴跌"的定价高于"暴涨"');
+    implications.push('做市商行为：负Gamma环境下，做市商的对冲行为会放大波动，而SKEW的正偏斜意味着做市商在对冲Put空头时，会在价格下跌时加速卖出标的，进一步强化下行趋势');
+  }
+
+  if (status === 'extreme' || status === 'high') {
+    implications.push('SKEW仅反映期权市场的定价，若出现实质性下行事件（如宏观数据恶化），偏斜可能进一步扩大，需结合基本面综合判断');
+  }
+
+  if (status === 'high' || status === 'extreme') {
+    implications.push('负Gamma环境下，期权买卖价差可能扩大，需优先选择流动性高的合约，避免滑点损失');
+  }
+
+  return implications;
 }
 
 /**
@@ -167,12 +192,14 @@ export function getSkewTradingImplications(status: string): string[] {
  * @param oiData 持仓数据
  * @param currentPrice 当前价格
  * @param atmIV ATM IV
+ * @param pcrStatus PCR状态（可选，用于组合分析）
  * @returns Skew 分析结果
  */
 export function analyzeSkew(
   oiData: OIData[],
   currentPrice: number,
-  atmIV: number
+  atmIV: number,
+  pcrStatus?: string
 ): SkewAnalysisResult {
   // 计算 Skew 数据
   const skewData = calculateSkewData(oiData, currentPrice, atmIV);
@@ -184,12 +211,16 @@ export function analyzeSkew(
   const statusInfo = analyzeSkewStatus(skew25Delta);
 
   // 获取交易启示
-  const tradingImplications = getSkewTradingImplications(statusInfo.status);
+  const tradingImplications = getSkewTradingImplications(statusInfo.status, skew25Delta, pcrStatus);
 
   // 风险提示
   const riskWarnings: string[] = [];
   if (statusInfo.status === 'extreme') {
     riskWarnings.push('极端偏斜，市场恐慌情绪严重');
+    riskWarnings.push('若近期出现高影响事件（如美联储决议、财报），SKEW可能快速飙升，偏斜程度加剧，需及时调整对冲策略');
+  }
+  if (statusInfo.status === 'high' || statusInfo.status === 'extreme') {
+    riskWarnings.push('SKEW仅反映期权市场的定价，若出现实质性下行事件（如宏观数据恶化），偏斜可能进一步扩大，需结合基本面综合判断');
   }
 
   return {

@@ -22,7 +22,6 @@ const SymbolSelector: React.FC<SymbolSelectorProps> = ({
   const [savedSymbols, setSavedSymbols] = useState<string[]>([]);
   const [popoverOpen, setPopoverOpen] = useState(false);
 
-  // 从localStorage加载已保存的股票
   useEffect(() => {
     try {
       const stored = localStorage.getItem(SAVED_SYMBOLS_KEY);
@@ -34,7 +33,6 @@ const SymbolSelector: React.FC<SymbolSelectorProps> = ({
     }
   }, []);
 
-  // 保存到localStorage
   const saveSymbolsToStorage = (symbols: string[]) => {
     try {
       localStorage.setItem(SAVED_SYMBOLS_KEY, JSON.stringify(symbols));
@@ -44,7 +42,6 @@ const SymbolSelector: React.FC<SymbolSelectorProps> = ({
   };
 
   const handleCustomInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    // 只允许输入字母和数字
     const value = e.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
     setCustomSymbol(value);
   };
@@ -61,7 +58,6 @@ const SymbolSelector: React.FC<SymbolSelectorProps> = ({
       return;
     }
     
-    // 验证股票代码格式（美股通常是1-5个字母）
     if (!/^[A-Z]{1,5}$/.test(symbol)) {
       message.warning('股票代码格式不正确，请输入1-5个字母');
       return;
@@ -80,12 +76,10 @@ const SymbolSelector: React.FC<SymbolSelectorProps> = ({
     if (customSymbol) {
       handleAnalyze(customSymbol);
     } else {
-      // 如果没有输入，刷新当前选中的股票
       onAnalyze();
     }
   };
 
-  // 保存/取消保存股票
   const toggleSaveSymbol = (symbol: string, e?: React.MouseEvent) => {
     e?.stopPropagation();
     
@@ -102,7 +96,6 @@ const SymbolSelector: React.FC<SymbolSelectorProps> = ({
     saveSymbolsToStorage(newSavedSymbols);
   };
 
-  // 删除已保存的股票
   const removeSavedSymbol = (symbol: string, e: React.MouseEvent) => {
     e.stopPropagation();
     const newSavedSymbols = savedSymbols.filter(s => s !== symbol);
@@ -111,7 +104,6 @@ const SymbolSelector: React.FC<SymbolSelectorProps> = ({
     message.success(`已删除 ${symbol}`);
   };
 
-  // 已保存股票列表内容
   const savedSymbolsContent = (
     <div style={{ width: '200px' }}>
       {savedSymbols.length > 0 ? (
@@ -151,9 +143,11 @@ const SymbolSelector: React.FC<SymbolSelectorProps> = ({
     </div>
   );
 
+  const isPresetSymbol = PRESET_SYMBOLS.includes(selectedSymbol);
+  const showSelectedCustomSymbol = !isPresetSymbol && selectedSymbol;
+
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-      {/* 预设股票标签 */}
       <Space size="small">
         {PRESET_SYMBOLS.map((symbol) => (
           <Tooltip key={symbol} title={`查看 ${symbol} 期权数据`}>
@@ -167,27 +161,48 @@ const SymbolSelector: React.FC<SymbolSelectorProps> = ({
                 display: 'flex',
                 alignItems: 'center',
                 gap: '4px',
+                fontWeight: selectedSymbol === symbol ? 'bold' : 'normal',
               }}
               onClick={() => handleTagClick(symbol)}
             >
               {symbol}
-              {savedSymbols.includes(symbol) ? (
+            </Tag>
+          </Tooltip>
+        ))}
+        
+        {showSelectedCustomSymbol && (
+          <Tooltip title={`查看 ${selectedSymbol} 期权数据`}>
+            <Tag
+              color="blue"
+              style={{
+                cursor: 'pointer',
+                fontSize: '14px',
+                padding: '4px 12px',
+                borderRadius: '4px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                fontWeight: 'bold',
+              }}
+              onClick={() => handleTagClick(selectedSymbol)}
+            >
+              {selectedSymbol}
+              {savedSymbols.includes(selectedSymbol) ? (
                 <StarFilled 
                   style={{ color: '#faad14', fontSize: '12px' }}
-                  onClick={(e) => toggleSaveSymbol(symbol, e)}
+                  onClick={(e) => toggleSaveSymbol(selectedSymbol, e)}
                 />
               ) : (
                 <StarOutlined 
                   style={{ color: '#bfbfbf', fontSize: '12px' }}
-                  onClick={(e) => toggleSaveSymbol(symbol, e)}
+                  onClick={(e) => toggleSaveSymbol(selectedSymbol, e)}
                 />
               )}
             </Tag>
           </Tooltip>
-        ))}
+        )}
       </Space>
 
-      {/* 自定义输入框 */}
       <Input
         placeholder="输入股票代码..."
         value={customSymbol}
@@ -199,7 +214,6 @@ const SymbolSelector: React.FC<SymbolSelectorProps> = ({
         disabled={loading}
       />
 
-      {/* 已保存标签 - 点击展开列表 */}
       <Popover
         content={savedSymbolsContent}
         title="已保存的股票"
@@ -224,7 +238,6 @@ const SymbolSelector: React.FC<SymbolSelectorProps> = ({
         </Tag>
       </Popover>
 
-      {/* Analyze 按钮 */}
       <Button
         type="primary"
         icon={<SearchOutlined />}

@@ -77,7 +77,7 @@ const IVChart: React.FC<IVChartProps> = ({
       grid: {
         left: '3%',
         right: '4%',
-        bottom: '10%',
+        bottom: '15%',
         top: '15%',
         containLabel: true,
       },
@@ -85,7 +85,18 @@ const IVChart: React.FC<IVChartProps> = ({
         trigger: 'axis',
         axisPointer: {
           type: 'cross',
+          crossStyle: {
+            color: '#999',
+            type: 'dashed'
+          }
         },
+        backgroundColor: 'rgba(255, 255, 255, 0.95)',
+        borderColor: '#d9d9d9',
+        borderWidth: 1,
+        textStyle: {
+          color: '#333'
+        },
+        extraCssText: 'box-shadow: 0 2px 8px rgba(0,0,0,0.15); border-radius: 4px; padding: 8px 12px;',
         formatter: (params: any) => {
           const strike = params[0].axisValue;
           const callIV = params.find((p: any) => p.seriesName === 'Call IV')?.value || 0;
@@ -93,10 +104,10 @@ const IVChart: React.FC<IVChartProps> = ({
           const atmIV = params.find((p: any) => p.seriesName === 'ATM IV')?.value || 0;
           
           return `
-            <div style="font-weight: bold; margin-bottom: 8px;">Strike: $${strike}</div>
-            <div style="color: #ff4d4f;">Call IV: ${callIV.toFixed(2)}%</div>
-            <div style="color: #52c41a;">Put IV: ${putIV.toFixed(2)}%</div>
-            <div style="color: #1890ff;">ATM IV: ${atmIV.toFixed(2)}%</div>
+            <div style="font-weight: bold; margin-bottom: 8px; border-bottom: 1px solid #f0f0f0; padding-bottom: 4px;">Strike: $${strike}</div>
+            <div style="color: #ff4d4f; margin-bottom: 4px;"><b>Call IV:</b> ${callIV.toFixed(2)}%</div>
+            <div style="color: #52c41a; margin-bottom: 4px;"><b>Put IV:</b> ${putIV.toFixed(2)}%</div>
+            <div style="color: #1890ff;"><b>ATM IV:</b> ${atmIV.toFixed(2)}%</div>
           `;
         },
       },
@@ -106,7 +117,38 @@ const IVChart: React.FC<IVChartProps> = ({
         textStyle: {
           fontSize: 11,
         },
+        selectedMode: true,
+        itemWidth: 12,
+        itemHeight: 12,
       },
+      dataZoom: [
+        {
+          type: 'inside',
+          xAxisIndex: 0,
+          start: 0,
+          end: 100,
+          zoomLock: false,
+        },
+        {
+          type: 'slider',
+          xAxisIndex: 0,
+          start: 0,
+          end: 100,
+          height: 20,
+          bottom: 10,
+          handleSize: '80%',
+          showDetail: true,
+          borderColor: '#d9d9d9',
+          fillerColor: 'rgba(24, 144, 255, 0.2)',
+          handleStyle: {
+            color: '#fff',
+            shadowBlur: 3,
+            shadowColor: 'rgba(0, 0, 0, 0.6)',
+            shadowOffsetX: 2,
+            shadowOffsetY: 2,
+          },
+        },
+      ],
       xAxis: {
         type: 'category',
         data: strikes,

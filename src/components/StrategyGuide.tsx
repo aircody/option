@@ -33,17 +33,42 @@ interface StrategyGuideProps {
   oiData: { strike: number; callOI: number; putOI: number }[];
   currentPrice: number;
   ivPercentile?: number;
+  gammaExposure?: number;
+  putCallRatio?: number;
+  atmIv?: number;
+  hv?: number;
+  vrp?: number;
+  skew?: number;
+  maxPain?: number;
 }
 
 const StrategyGuide: React.FC<StrategyGuideProps> = ({
   oiData,
   currentPrice,
   ivPercentile = 50,
+  gammaExposure,
+  putCallRatio,
+  atmIv,
+  hv,
+  vrp,
+  skew,
+  maxPain,
 }) => {
   // 生成策略建议
   const recommendation = useMemo(() => {
-    return generateStrategyRecommendation(oiData, currentPrice, ivPercentile);
-  }, [oiData, currentPrice, ivPercentile]);
+    return generateStrategyRecommendation(
+      oiData, 
+      currentPrice, 
+      ivPercentile,
+      gammaExposure,
+      putCallRatio,
+      atmIv,
+      hv,
+      vrp,
+      skew,
+      maxPain
+    );
+  }, [oiData, currentPrice, ivPercentile, gammaExposure, putCallRatio, atmIv, hv, vrp, skew, maxPain]);
 
   const { environment, primarySignal, secondarySignal, strategy, riskLevel, warnings } =
     recommendation;

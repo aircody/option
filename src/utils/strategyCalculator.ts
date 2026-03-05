@@ -381,21 +381,35 @@ export function analyzeRangeSignal(
 }
 
 /**
- * 生成策略建议
+ * 生成策略建议（使用真实API数据）
  */
 export function generateStrategyRecommendation(
   oiData: { strike: number; callOI: number; putOI: number }[],
   currentPrice: number,
-  ivPercentile: number = 50
+  ivPercentile: number = 50,
+  gexData?: number,
+  pcrData?: number,
+  atmIv?: number,
+  hv?: number,
+  vrpData?: number,
+  skewData?: number,
+  maxPainData?: number
 ): StrategyRecommendation {
-  // 计算所有指标
-  const gexAnalysis = analyzeGEX(oiData, currentPrice);
+  // 优先使用传入的真实数据，没有的话再计算
+  const gexAnalysis = gexData !== undefined ? { totalGEX: gexData } : analyzeGEX(oiData, currentPrice);
   
-  const pcrAnalysis = analyzePCR(oiData);
+  const pcrAnalysis = pcrData !== undefined ? { pcrOI: pcrData } : analyzePCR(oiData);
   
-  const ivAnalysis = analyzeIV(oiData, currentPrice, pcrAnalysis.status);
+  const ivAnalysis = (atmIv !== undefined || hv !== undefined || vrpData !== undefined || skewData !== undefined) 
+    ? { 
+        atmIV: atmIv || 0, 
+        hv: hv || 0, 
+        vrp: vrpData !== undefined ? vrpData / 100 : 0, 
+        putSkew: skewData !== undefined ? skewData / 100 : 0 
+      } 
+    : analyzeIV(oiData, currentPrice, (pcrData !== undefined ? 'neutral' : analyzePCR(oiData).status));
   
-  const { maxPain } = calculateMaxPain(oiData);
+  const { maxPain } = maxPainData !== undefined ? { maxPain: maxPainData } : calculateMaxPain(oiData);
   
   // 识别 OI Walls（简化实现）
   const oiWalls = identifyOIWallsSimple(oiData, currentPrice);
@@ -405,26 +419,26 @@ export function generateStrategyRecommendation(
   // 判定市场环境
   const environment = determineMarketEnvironment(
     gexAnalysis.totalGEX,
-    ivAnalysis.atmIV,
+    ivAnalysis.atmIV || 0,
     ivPercentile
   );
   
   // 分析各方向信号
   const bullishSignal = analyzeBullishSignal(
     currentPrice, maxPain, gexAnalysis.totalGEX,
-    pcrAnalysis.pcrOI, ivAnalysis.vrp, ivAnalysis.putSkew,
+    pcrAnalysis.pcrOI, ivAnalysis.vrp || 0, ivAnalysis.putSkew || 0,
     callWalls, putWalls
   );
   
   const bearishSignal = analyzeBearishSignal(
     currentPrice, maxPain, gexAnalysis.totalGEX,
-    pcrAnalysis.pcrOI, ivAnalysis.vrp, ivAnalysis.putSkew,
+    pcrAnalysis.pcrOI, ivAnalysis.vrp || 0, ivAnalysis.putSkew || 0,
     callWalls, putWalls
   );
   
   const rangeSignal = analyzeRangeSignal(
-    currentPrice, gexAnalysis.totalGEX, ivAnalysis.vrp,
-    ivAnalysis.putSkew, callWalls, putWalls, maxPain
+    currentPrice, gexAnalysis.totalGEX, ivAnalysis.vrp || 0,
+    ivAnalysis.putSkew || 0, callWalls, putWalls, maxPain
   );
   
   // 选择最强信号
