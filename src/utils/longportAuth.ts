@@ -4,7 +4,7 @@
  */
 
 /**
- * 生成 HMAC-SHA256 签名
+ * 生成 HMAC-SHA256 签名 (Base64 编码)
  */
 async function hmacSha256(key: string, message: string): Promise<string> {
   const encoder = new TextEncoder();
@@ -22,9 +22,9 @@ async function hmacSha256(key: string, message: string): Promise<string> {
     encoder.encode(message)
   );
   
-  return Array.from(new Uint8Array(signature))
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('');
+  // 转换为 Base64 编码
+  const base64Signature = btoa(String.fromCharCode(...new Uint8Array(signature)));
+  return base64Signature;
 }
 
 /**
@@ -78,6 +78,7 @@ export async function generateHeaders(
 
 /**
  * 发送 LongPort API 请求
+ * 使用 Python 后端服务
  */
 export async function longportRequest<T>(
   baseUrl: string,
@@ -89,11 +90,20 @@ export async function longportRequest<T>(
   body?: any
 ): Promise<T> {
   const bodyString = body ? JSON.stringify(body) : undefined;
-  const headers = await generateHeaders(appKey, appSecret, accessToken, method, uri, bodyString);
   
-  const url = `${baseUrl}${uri}`;
+  // 使用 Python 后端服务
+  const pythonBackendUrl = 'http://localhost:5000';
+  const url = `${pythonBackendUrl}${uri}`;
   
-  console.log('[LongPort API] Request:', { method, url, headers });
+  // 准备请求头（Python 后端使用不同的认证方式）
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'X-Api-Key': appKey,
+    'X-Api-Secret': appSecret,
+    'Authorization': accessToken,
+  };
+  
+  console.log('[LongPort API] Request via Python Backend:', { method, url, headers });
   
   const response = await fetch(url, {
     method,

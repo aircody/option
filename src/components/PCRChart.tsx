@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useMemo } from 'react';
 import * as echarts from 'echarts';
 import { Card, Typography, Tag, Space, Divider, List, Row, Col, Progress } from 'antd';
-import { calculatePCR, analyzePCR, formatPCR, getPCRZoneInfo } from '../utils/pcrCalculator';
+import { calculatePCRData, analyzePCR, formatPCR, analyzePCRStatus } from '../utils/pcrCalculator';
 import type { PCRData } from '../utils/pcrCalculator';
 
 const { Text, Title } = Typography;
@@ -12,19 +12,25 @@ interface PCRChartProps {
   putCallRatio?: number;
 }
 
+// 辅助函数：获取PCR区间信息
+const getPCRZoneInfo = (pcr: number) => {
+  const status = analyzePCRStatus(pcr);
+  return {
+    zone: status.statusLabel,
+    color: status.color,
+  };
+};
+
 const PCRChart: React.FC<PCRChartProps> = ({ oiData, currentPrice, putCallRatio }) => {
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<echarts.ECharts | null>(null);
 
   // 计算PCR数据
   const { pcrData, analysis } = useMemo(() => {
-    const pcrData = calculatePCR(oiData);
-    const analysis = analyzePCR(pcrData);
+    const pcrData = calculatePCRData(oiData);
+    const analysis = analyzePCR(oiData);
     return { pcrData, analysis };
   }, [oiData]);
-
-  // 获取PCR区间信息
-  const zoneInfo = getPCRZoneInfo(analysis.pcrOI);
 
   // 计算OI占比
   const oiRatio = useMemo(() => {
@@ -259,7 +265,7 @@ const PCRChart: React.FC<PCRChartProps> = ({ oiData, currentPrice, putCallRatio 
               type: 'dashed',
             },
             label: {
-              formatter: '现价 $${c}',
+              formatter: `现价 $${currentPrice}`,
               position: 'end',
               fontSize: 10,
               color: '#1890ff',
@@ -304,14 +310,14 @@ const PCRChart: React.FC<PCRChartProps> = ({ oiData, currentPrice, putCallRatio 
                 <Text strong style={{ fontSize: 20 }}>
                   PCR: {formatPCR(analysis.pcrOI)}
                 </Text>
-                <Tag color={zoneInfo.color} style={{ margin: 0 }}>
+                <Tag color={analysis.status === 'extreme_bearish' || analysis.status === 'bearish' ? '#52c41a' : '#ff4d4f'} style={{ margin: 0 }}>
                   {analysis.statusLabel}
                 </Tag>
               </Space>
             </Col>
             <Col>
               <Text type="secondary" style={{ fontSize: 11 }}>
-                信号: <span style={{ color: zoneInfo.color, fontWeight: 'bold' }}>{zoneInfo.signal}</span>
+                信号: <span style={{ color: analysis.status === 'extreme_bearish' || analysis.status === 'bearish' ? '#52c41a' : '#ff4d4f', fontWeight: 'bold' }}>{analysis.status === 'extreme_bearish' || analysis.status === 'bearish' ? '看多' : '看空'}</span>
               </Text>
             </Col>
           </Row>

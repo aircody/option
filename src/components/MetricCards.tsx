@@ -1,10 +1,8 @@
 import React, { useMemo } from 'react';
 import { Card, Typography, Row, Col } from 'antd';
 import type { OptionAnalysisData } from '../types';
-import { calculateGEX, analyzeGEX, formatGEX, getGEXStatusLabel } from '../utils/gexCalculator';
-import { calculatePCR, analyzePCR, formatPCR, getPCRZoneInfo } from '../utils/pcrCalculator';
-import { calculateIVData, analyzeIV, formatIV, formatVRP, getVRPColor } from '../utils/ivCalculator';
-import { calculateSkewData, analyzeSkew, formatSkew, getSkewColor } from '../utils/skewCalculator';
+import { calculateGEX, analyzeGEX, formatGEX } from '../utils/gexCalculator';
+import { calculatePCRData, analyzePCR, formatPCR } from '../utils/pcrCalculator';
 
 const { Text } = Typography;
 
@@ -13,64 +11,66 @@ interface MetricCardsProps {
 }
 
 const MetricCards: React.FC<MetricCardsProps> = ({ data }) => {
-  const formatCurrency = (value: number) => {
-    if (Math.abs(value) >= 1e9) {
-      return `$${(value / 1e9).toFixed(2)}B`;
-    }
-    if (Math.abs(value) >= 1e6) {
-      return `$${(value / 1e6).toFixed(2)}M`;
-    }
-    return `$${value.toFixed(2)}`;
-  };
-
-  // 使用新的GEX计算工具计算真实的Gamma Exposure
-  const gexAnalysis = useMemo(() => {
-    const gexData = calculateGEX(data.oiData, data.lastPrice);
-    return analyzeGEX(gexData, data.lastPrice);
-  }, [data.oiData, data.lastPrice]);
-
-  const gexStatusLabel = getGEXStatusLabel(gexAnalysis.status);
-
-  // 使用新的PCR计算工具计算真实的Put/Call Ratio
-  const pcrAnalysis = useMemo(() => {
-    const pcrData = calculatePCR(data.oiData);
-    return analyzePCR(pcrData);
-  }, [data.oiData]);
-
-  const pcrZoneInfo = getPCRZoneInfo(pcrAnalysis.pcrOI);
-
-  // 使用新的IV计算工具计算真实的ATM IV
-  const ivAnalysis = useMemo(() => {
-    const ivData = calculateIVData(data.oiData, data.lastPrice);
-    return analyzeIV(ivData, data.lastPrice, data.gammaExposure, data.putCallRatio);
-  }, [data.oiData, data.lastPrice, data.gammaExposure, data.putCallRatio]);
-
-  const vrpColor = getVRPColor(ivAnalysis.vrpPercent);
-
-  // 使用新的SKEW计算工具计算真实的SKEW
-  const skewAnalysis = useMemo(() => {
-    const skewData = calculateSkewData(data.oiData, data.lastPrice, ivAnalysis.atmIV);
-    return analyzeSkew(skewData, ivAnalysis.atmIV, data.putCallRatio, data.gammaExposure);
-  }, [data.oiData, data.lastPrice, ivAnalysis.atmIV, data.putCallRatio, data.gammaExposure]);
-
-  const skewColor = getSkewColor(skewAnalysis.skewPercent);
-
   const formatPercent = (value: number) => {
     const sign = value >= 0 ? '+' : '';
     return `${sign}${value.toFixed(2)}%`;
   };
 
-  // 计算 Max Pain 与现价的偏离
+  const formatIV = (value: number) => {
+    return `${(value * 100).toFixed(2)}%`;
+  };
+
+  const formatVRP = (vrp: number, vrpPercent: number) => {
+    const sign = vrpPercent >= 0 ? '+' : '';
+    return `${sign}${vrpPercent.toFixed(2)}% (${vrp >= 0 ? '+' : ''}${(vrp * 100).toFixed(2)}%)`;
+  };
+
+  const gexAnalysis = useMemo(() => {
+    if (data.gexData) {
+      return data.gexData;
+    }
+    return analyzeGEX(data.oiData, data.lastPrice);
+  }, [data.gexData, data.oiData, data.lastPrice]);
+
+  const pcrAnalysis = useMemo(() => {
+    if (data.pcrData) {
+      return data.pcrData;
+    }
+    return analyzePCR(data.oiData);
+  }, [data.pcrData, data.oiData]);
+
+  const ivData = useMemo(() => {
+    if (data.ivData) {
+      return data.ivData;
+    }
+    return {
+      atmIV: data.atmIv || 0,
+      hv: data.hv || 0,
+      vrp: data.vrp ? data.vrp / 100 : 0,
+      vrpPercent: data.vrp || 0,
+      putSkew: data.skew || 0,
+      skew25Delta: data.skew || 0,
+      status: 'normal' as const,
+      statusLabel: '正常溢价',
+    };
+  }, [data.ivData, data.atmIv, data.hv, data.vrp, data.skew]);
+
+  const getVRPColor = (vrpPercent: number): string => {
+    if (vrpPercent < 5) return '#52c41a';
+    if (vrpPercent < 15) return '#73d13d';
+    if (vrpPercent < 30) return '#faad14';
+    return '#ff4d4f';
+  };
+
+  const vrpColor = getVRPColor(ivData.vrpPercent);
+
   const calculateMaxPainDeviation = () => {
     const maxPain = data.maxPain;
     const currentPrice = data.lastPrice;
     const deviation = ((currentPrice - maxPain) / maxPain) * 100;
     
-    // 偏离判断
-    // 正值：现价 > Max Pain，表示偏高（价格可能下跌向Max Pain靠拢）
-    // 负值：现价 < Max Pain，表示偏低（价格可能上涨向Max Pain靠拢）
     const isAbove = deviation > 0;
-    const threshold = 1.0; // 1%阈值，小于此值视为平
+    const threshold = 1.0;
     
     if (Math.abs(deviation) < threshold) {
       return {
@@ -86,7 +86,7 @@ const MetricCards: React.FC<MetricCardsProps> = ({ data }) => {
       return {
         deviation,
         label: '偏高',
-        color: '#ff4d4f', // 红色 - 偏高，可能下跌
+        color: '#ff4d4f',
         bgColor: '#fff2f0',
         description: `高于Max Pain ${formatPercent(Math.abs(deviation))}，价格可能下跌靠拢`,
       };
@@ -94,7 +94,7 @@ const MetricCards: React.FC<MetricCardsProps> = ({ data }) => {
       return {
         deviation,
         label: '偏低',
-        color: '#52c41a', // 绿色 - 偏低，可能上涨
+        color: '#52c41a',
         bgColor: '#f6ffed',
         description: `低于Max Pain ${formatPercent(Math.abs(deviation))}，价格可能上涨靠拢`,
       };
@@ -107,7 +107,7 @@ const MetricCards: React.FC<MetricCardsProps> = ({ data }) => {
     {
       key: 'maxPain',
       label: 'MAX PAIN',
-      value: `$${data.maxPain}`,
+      value: `$${data.maxPain.toFixed(2)}`,
       subValue: `现价 $${data.lastPrice.toFixed(2)}`,
       change: formatPercent(maxPainDeviation.deviation),
       changeColor: maxPainDeviation.color,
@@ -120,8 +120,8 @@ const MetricCards: React.FC<MetricCardsProps> = ({ data }) => {
       key: 'gamma',
       label: 'GAMMA EXPOSURE',
       value: formatGEX(gexAnalysis.totalGEX),
-      status: gexStatusLabel.label,
-      statusColor: gexStatusLabel.color,
+      status: gexAnalysis.statusLabel,
+      statusColor: gexAnalysis.status === 'extreme_negative' || gexAnalysis.status === 'negative' ? '#ff4d4f' : '#52c41a',
       description: gexAnalysis.description,
       borderColor: '#52c41a',
     },
@@ -130,27 +130,27 @@ const MetricCards: React.FC<MetricCardsProps> = ({ data }) => {
       label: 'PUT/CALL RATIO',
       value: formatPCR(pcrAnalysis.pcrOI),
       description: pcrAnalysis.description,
-      subDescription: `信号: ${pcrZoneInfo.signal}`,
+      subDescription: `OI: ${(pcrAnalysis.totalPutOI / 1000000).toFixed(2)}M / ${(pcrAnalysis.totalCallOI / 1000000).toFixed(2)}M`,
       borderColor: '#faad14',
       valueColor: pcrAnalysis.pcrOI > 1.5 ? '#52c41a' : (pcrAnalysis.pcrOI < 0.8 ? '#ff4d4f' : '#faad14'),
     },
     {
       key: 'atmIv',
       label: 'ATM IV',
-      value: formatIV(ivAnalysis.atmIV),
-      subValue: `HV: ${formatIV(ivAnalysis.hv)}`,
-      change: `VRP: ${formatVRP(ivAnalysis.vrp)}`,
+      value: formatIV(ivData.atmIV),
+      subValue: `HV: ${formatIV(ivData.hv)}`,
+      change: `VRP: ${formatVRP(ivData.vrp, ivData.vrpPercent)}`,
       changeColor: vrpColor,
-      description: ivAnalysis.statusLabel,
+      description: ivData.statusLabel,
       borderColor: '#722ed1',
     },
     {
       key: 'skew',
       label: 'SKEW (25Δ RR)',
-      value: formatSkew(skewAnalysis.skew25Delta),
-      description: skewAnalysis.description,
+      value: formatPercent(ivData.skew25Delta * 100),
+      description: (ivData.skew25Delta * 100) > 3 ? '下行保护成本高于平均' : ((ivData.skew25Delta * 100) < -3 ? '偏斜向下' : '波动率偏度正常'),
       borderColor: '#eb2f96',
-      valueColor: skewColor,
+      valueColor: (ivData.skew25Delta * 100) > 3 ? '#faad14' : '#333',
     },
   ];
 

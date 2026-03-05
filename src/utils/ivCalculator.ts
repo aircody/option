@@ -1,216 +1,342 @@
 /**
- * ATM IV (At-The-Money Implied Volatility) 计算工具
+ * Implied Volatility (IV) 计算工具
  * 
- * ATM IV: 平值期权的隐含波动率，代表市场对未来波动的预期
- * HV: 历史波动率，代表市场实际发生的波动水平
- * VRP: 波动率风险溢价 (Volatility Risk Premium) = ATM IV - HV
+ * 根据 LongPort API 返回的期权数据计算 ATM IV、HV、VRP 等指标
+ * API 返回字段: strike_price, implied_volatility, direction
+ * 
+ * 核心指标：
+ * - ATM IV: 平值期权的隐含波动率
+ * - HV: 历史波动率（使用简化估算）
+ * - VRP: 波动率风险溢价 = ATM IV - HV
  */
 
+import type { OIData } from '../types';
+
+/**
+ * IV 数据接口
+ */
 export interface IVData {
-  strike: number;
-  callIV: number;
-  putIV: number;
-  atmIV: number;  // 该strike的ATM IV (Call和Put的平均)
-  distanceFromATM: number; // 距离ATM的百分比
+  strike: number;           // 行权价
+  callIV: number;           // Call隐含波动率
+  putIV: number;            // Put隐含波动率
+  avgIV: number;            // 平均IV
+  distanceFromATM: number;  // 距离ATM的百分比
 }
 
+/**
+ * IV 分析结果接口
+ */
 export interface IVAnalysisResult {
-  atmIV: number;           // 平值期权隐含波动率
-  hv: number;              // 历史波动率
-  vrp: number;             // 波动率风险溢价 (ATM IV - HV)
-  vrpPercent: number;      // VRP百分比 (VRP / HV * 100)
-  callSkew: number;        // Call IV偏度
-  putSkew: number;         // Put IV偏度
+  atmIV: number;            // 平值期权隐含波动率
+  hv: number;               // 历史波动率（估算）
+  vrp: number;              // 波动率风险溢价
+  vrpPercent: number;       // VRP百分比
+  callSkew: number;         // Call IV偏度
+  putSkew: number;          // Put IV偏度
   status: 'low' | 'normal' | 'high' | 'extreme';
-  statusLabel: string;
-  description: string;
-  tradingImplications: string[];
-  riskWarnings: string[];
+  statusLabel: string;      // 状态标签
+  description: string;      // 状态描述
+  tradingImplications: string[]; // 交易启示
+  riskWarnings: string[];   // 风险提示
 }
 
 /**
- * 估算期权的隐含波动率
- * 使用简化模型：ATM期权IV最低，远离ATM时IV递增（波动率微笑）
+ * 从 API 数据格式提取 IV 信息
+ * @param apiOptionData Python后端返回的期权数据格式
+ * @param underlyingPrice 标的资产当前价格
+ * @returns IV 数据数组
  */
-function estimateIV(strike: number, underlyingPrice: number, isCall: boolean): number {
-  const distance = Math.abs(strike - underlyingPrice);
-  const atmDistance = underlyingPrice * 0.1;
-  
-  // 基础IV水平（根据市场环境调整）
-  const baseIV = 0.20; // 20%
-  
-  // 距离ATM越远，IV越高（波动率微笑）
-  let skewFactor = 0;
-  if (distance < atmDistance * 0.1) {
-    skewFactor = 0; // ATM
-  } else if (distance < atmDistance * 0.3) {
-    skewFactor = 0.02; // 近ATM
-  } else if (distance < atmDistance * 0.6) {
-    skewFactor = 0.05; // 中等OTM
-  } else {
-    skewFactor = 0.08; // 远OTM
+export function extractIVDataFromApiOption(apiOptionData: any[], underlyingPrice: number): IVData[] {
+  if (!apiOptionData || !Array.isArray(apiOptionData) || !underlyingPrice) {
+    return [];
   }
-  
-  // Put通常有更高的IV（下行保护需求）
-  const putPremium = isCall ? 0 : 0.02;
-  
-  return baseIV + skewFactor + putPremium;
-}
 
-/**
- * 计算各strike的IV数据
- */
-export function calculateIVData(
-  oiData: { strike: number; callOI: number; putOI: number }[],
-  underlyingPrice: number
-): IVData[] {
-  const ivData: IVData[] = [];
-  
-  for (const data of oiData) {
-    const callIV = estimateIV(data.strike, underlyingPrice, true);
-    const putIV = estimateIV(data.strike, underlyingPrice, false);
-    const atmIV = (callIV + putIV) / 2;
-    const distanceFromATM = Math.abs(data.strike - underlyingPrice) / underlyingPrice;
-    
-    ivData.push({
-      strike: data.strike,
+  const result: IVData[] = [];
+
+  for (const item of apiOptionData) {
+    const strike = parseFloat(item.strike || 0);
+    const callIV = parseFloat(item.callIV || 0);
+    const putIV = parseFloat(item.putIV || 0);
+    const avgIV = (callIV + putIV) / 2 || callIV || putIV;
+    const distanceFromATM = Math.abs((strike - underlyingPrice) / underlyingPrice);
+
+    result.push({
+      strike,
       callIV,
       putIV,
-      atmIV,
+      avgIV,
       distanceFromATM,
     });
   }
-  
-  return ivData;
+
+  return result.sort((a, b) => a.strike - b.strike);
 }
 
 /**
- * 找到最接近ATM的IV（真正的ATM IV）
+ * 从 API 数据提取 IV 信息
+ * @param apiData LongPort API 返回的期权数据
+ * @param underlyingPrice 标的资产当前价格
+ * @returns IV 数据数组
  */
-export function findATMIV(ivData: IVData[]): number {
-  // 找到distanceFromATM最小的数据点
-  const atmData = ivData.reduce((min, current) => 
-    current.distanceFromATM < min.distanceFromATM ? current : min
-  );
-  return atmData.atmIV;
+export function extractIVData(apiData: any[], underlyingPrice: number): IVData[] {
+  if (!apiData || !Array.isArray(apiData) || !underlyingPrice) {
+    return [];
+  }
+
+  // 按行权价分组，提取 Call 和 Put 的 IV
+  const strikeMap = new Map<number, { callIV: number; putIV: number }>();
+
+  for (const item of apiData) {
+    const strike = parseFloat(item.strike_price || item.strike || 0);
+    const iv = parseFloat(item.implied_volatility || item.iv || 0);
+    const direction = item.direction || '';
+
+    if (!strikeMap.has(strike)) {
+      strikeMap.set(strike, { callIV: 0, putIV: 0 });
+    }
+
+    const data = strikeMap.get(strike)!;
+    if (direction === 'C' || direction === 'Call') {
+      data.callIV = iv;
+    } else if (direction === 'P' || direction === 'Put') {
+      data.putIV = iv;
+    }
+  }
+
+  // 转换为数组并计算距离 ATM 的百分比
+  const result: IVData[] = [];
+  strikeMap.forEach((data, strike) => {
+    const avgIV = (data.callIV + data.putIV) / 2 || data.callIV || data.putIV;
+    const distanceFromATM = Math.abs((strike - underlyingPrice) / underlyingPrice);
+
+    result.push({
+      strike,
+      callIV: data.callIV,
+      putIV: data.putIV,
+      avgIV,
+      distanceFromATM,
+    });
+  });
+
+  return result.sort((a, b) => a.strike - b.strike);
 }
 
 /**
- * 估算历史波动率（简化模型）
- * 实际应用中应该从历史价格数据计算
+ * 计算 ATM IV
+ * 找到最接近当前价格的行权价的 IV
+ * @param ivData IV 数据数组
+ * @param underlyingPrice 标的资产当前价格
+ * @returns ATM IV 值
+ */
+export function calculateATMIV(ivData: IVData[], underlyingPrice: number): number {
+  if (!ivData || ivData.length === 0) {
+    return 0;
+  }
+
+  // 找到最接近 ATM 的行权价
+  let minDistance = Infinity;
+  let atmIV = 0;
+
+  for (const data of ivData) {
+    const distance = Math.abs(data.strike - underlyingPrice);
+    if (distance < minDistance) {
+      minDistance = distance;
+      atmIV = data.avgIV;
+    }
+  }
+
+  return atmIV;
+}
+
+/**
+ * 估算历史波动率 (HV)
+ * 使用简化模型：HV ≈ ATM IV × 0.75（典型比例）
+ * @param atmIV ATM IV 值
+ * @returns 估算的 HV
  */
 export function estimateHV(atmIV: number): number {
-  // 简化模型：HV通常低于IV，VRP通常在2-8%之间
-  // 根据ATM IV估算HV，保持VRP在合理范围
-  const vrp = 0.02 + Math.random() * 0.04; // 2-6%的VRP
-  return Math.max(0.10, atmIV - vrp);
+  if (!atmIV || atmIV <= 0) {
+    return 0.15; // 默认 15%
+  }
+  // 典型市场中，IV 通常比 HV 高 25-35%，这里使用 0.75 作为估算系数
+  return atmIV * 0.75;
 }
 
 /**
- * 分析IV状态
+ * 计算 VRP (Volatility Risk Premium)
+ * @param atmIV ATM IV
+ * @param hv HV
+ * @returns VRP 值
+ */
+export function calculateVRP(atmIV: number, hv: number): number {
+  return atmIV - hv;
+}
+
+/**
+ * 计算 VRP 百分比
+ * @param vrp VRP 值
+ * @param hv HV
+ * @returns VRP 百分比
+ */
+export function calculateVRPPercent(vrp: number, hv: number): number {
+  if (!hv || hv <= 0) return 0;
+  return (vrp / hv) * 100;
+}
+
+/**
+ * 计算 IV 偏度 (Skew)
+ * @param ivData IV 数据数组
+ * @param underlyingPrice 标的资产当前价格
+ * @returns Call 和 Put 的偏度
+ */
+export function calculateIVSkew(ivData: IVData[], underlyingPrice: number): {
+  callSkew: number;
+  putSkew: number;
+} {
+  if (!ivData || ivData.length === 0) {
+    return { callSkew: 0, putSkew: 0 };
+  }
+
+  // 分离 OTM Call 和 OTM Put
+  const otmCalls = ivData.filter(d => d.strike > underlyingPrice && d.callIV > 0);
+  const otmPuts = ivData.filter(d => d.strike < underlyingPrice && d.putIV > 0);
+
+  // 计算平均 IV
+  const avgCallIV = otmCalls.reduce((sum, d) => sum + d.callIV, 0) / (otmCalls.length || 1);
+  const avgPutIV = otmPuts.reduce((sum, d) => sum + d.putIV, 0) / (otmPuts.length || 1);
+  const atmIV = calculateATMIV(ivData, underlyingPrice);
+
+  // 计算偏度（OTM IV 与 ATM IV 的差值）
+  const callSkew = atmIV > 0 ? ((avgCallIV - atmIV) / atmIV) * 100 : 0;
+  const putSkew = atmIV > 0 ? ((avgPutIV - atmIV) / atmIV) * 100 : 0;
+
+  return { callSkew, putSkew };
+}
+
+/**
+ * 分析 VRP 状态
+ * @param vrpPercent VRP 百分比
+ * @returns 状态分析结果
+ */
+export function analyzeVRPStatus(vrpPercent: number): {
+  status: 'low' | 'normal' | 'high' | 'extreme';
+  statusLabel: string;
+  description: string;
+  color: string;
+} {
+  if (vrpPercent < 5) {
+    return {
+      status: 'low',
+      statusLabel: '低溢价',
+      description: '波动率定价合理，预期与实际接近',
+      color: '#52c41a',
+    };
+  } else if (vrpPercent < 15) {
+    return {
+      status: 'normal',
+      statusLabel: '正常溢价',
+      description: '市场预期略高于历史波动',
+      color: '#73d13d',
+    };
+  } else if (vrpPercent < 30) {
+    return {
+      status: 'high',
+      statusLabel: '高溢价',
+      description: '波动率定价偏贵，存在均值回归动力',
+      color: '#faad14',
+    };
+  } else {
+    return {
+      status: 'extreme',
+      statusLabel: '极端溢价',
+      description: '波动率定价极端偏贵，市场情绪恐慌',
+      color: '#ff4d4f',
+    };
+  }
+}
+
+/**
+ * 获取交易启示
+ * @param vrpStatus VRP 状态
+ * @param pcrStatus PCR 状态（可选，用于组合分析）
+ * @returns 交易启示列表
+ */
+export function getIVTradingImplications(
+  vrpStatus: string,
+  pcrStatus?: string
+): string[] {
+  const implications: string[] = [];
+
+  // 根据 VRP 状态添加启示
+  switch (vrpStatus) {
+    case 'low':
+      implications.push('波动率定价合理，可进行方向性交易');
+      break;
+    case 'normal':
+      implications.push('适度正VRP，可考虑轻度波动率卖方策略');
+      break;
+    case 'high':
+      implications.push('波动率卖方策略：卖出跨式/宽跨式期权，赚取波动率溢价');
+      implications.push('严格控制仓位（单策略仓位≤10%）');
+      break;
+    case 'extreme':
+      implications.push('极端高溢价，强烈建议波动率卖方策略');
+      implications.push('但必须设置严格止损，防范波动率进一步上行');
+      break;
+  }
+
+  // 组合分析
+  if (pcrStatus === 'extreme_bearish' && (vrpStatus === 'high' || vrpStatus === 'extreme')) {
+    implications.push('高PCR + 正VRP组合：市场情绪恐慌性定价，反向看多胜率提升');
+    implications.push('建议买入虚值看涨期权（Call），规避负Gamma带来的短期暴跌风险');
+  }
+
+  return implications;
+}
+
+/**
+ * 执行完整的 IV 分析
+ * @param apiData LongPort API 返回的期权数据
+ * @param underlyingPrice 标的资产当前价格
+ * @param pcrStatus PCR 状态（可选，用于组合分析）
+ * @returns IV 分析结果
  */
 export function analyzeIV(
-  ivData: IVData[],
+  apiData: any[],
   underlyingPrice: number,
-  gammaExposure?: number,
-  pcr?: number
+  pcrStatus?: string
 ): IVAnalysisResult {
-  const atmIV = findATMIV(ivData);
+  // 提取 IV 数据
+  const ivData = extractIVData(apiData, underlyingPrice);
+
+  // 计算 ATM IV
+  const atmIV = calculateATMIV(ivData, underlyingPrice);
+
+  // 估算 HV
   const hv = estimateHV(atmIV);
-  const vrp = atmIV - hv;
-  const vrpPercent = (vrp / hv) * 100;
-  
-  // 计算偏度
-  const otmCalls = ivData.filter(d => d.strike > underlyingPrice);
-  const otmPuts = ivData.filter(d => d.strike < underlyingPrice);
-  
-  const callSkew = otmCalls.length > 0 
-    ? otmCalls.reduce((sum, d) => sum + d.callIV, 0) / otmCalls.length - atmIV
-    : 0;
-  const putSkew = otmPuts.length > 0
-    ? otmPuts.reduce((sum, d) => sum + d.putIV, 0) / otmPuts.length - atmIV
-    : 0;
-  
-  // 确定状态
-  let status: IVAnalysisResult['status'];
-  let statusLabel: string;
-  let description: string;
-  let tradingImplications: string[];
-  let riskWarnings: string[];
-  
-  // 根据VRP判断状态
-  if (vrpPercent < 5) {
-    status = 'low';
-    statusLabel = '低溢价';
-    description = 'VRP较低，波动率定价相对合理，市场预期与实际波动接近';
-    tradingImplications = [
-      '波动率定价合理，可采用常规策略',
-      '买入期权成本相对较低',
-      '适合方向性交易',
-    ];
-    riskWarnings = [
-      '低VRP可能预示即将到来的波动放大',
-      '关注是否出现事件驱动导致IV跳升',
-    ];
-  } else if (vrpPercent < 15) {
-    status = 'normal';
-    statusLabel = '正常溢价';
-    description = 'VRP处于正常区间，市场预期略高于历史波动';
-    tradingImplications = [
-      '波动率定价适中',
-      '可采用平衡策略',
-      '关注VRP变化方向',
-    ];
-    riskWarnings = [
-      'VRP可能向任一方向移动',
-      '结合其他指标判断趋势',
-    ];
-  } else if (vrpPercent < 30) {
-    status = 'high';
-    statusLabel = '高溢价';
-    description = `VRP达${vrpPercent.toFixed(1)}%，波动率定价偏贵，市场预期显著高于历史波动`;
-    tradingImplications = [
-      '波动率定价偏贵，存在均值回归动力',
-      '考虑卖出波动率策略（Short Straddle/Strangle）',
-      '买入期权成本较高，谨慎选择',
-    ];
-    riskWarnings = [
-      '高VRP可能持续，若发生风险事件IV可能进一步上行',
-      '负Gamma环境下波动剧烈，严格控制仓位',
-      '设置止损，如突破关键支撑/阻力位时平仓',
-    ];
-  } else {
-    status = 'extreme';
-    statusLabel = '极端溢价';
-    description = `VRP高达${vrpPercent.toFixed(1)}%，波动率定价极端偏贵，市场情绪恐慌`;
-    tradingImplications = [
-      '波动率定价极端偏贵，强烈预期均值回归',
-      '卖出波动率策略潜在收益高，但风险也大',
-      '买入方向性期权成本极高，建议等待IV回落',
-    ];
-    riskWarnings = [
-      '极端VRP通常伴随重大事件，需谨慎评估',
-      '负Gamma+高PCR环境下，波动可能进一步放大',
-      '严格控制仓位（单策略≤10%）',
-      '临近期权到期，ATM IV会非线性波动',
-    ];
+
+  // 计算 VRP
+  const vrp = calculateVRP(atmIV, hv);
+  const vrpPercent = calculateVRPPercent(vrp, hv);
+
+  // 计算 IV 偏度
+  const { callSkew, putSkew } = calculateIVSkew(ivData, underlyingPrice);
+
+  // 分析 VRP 状态
+  const statusInfo = analyzeVRPStatus(vrpPercent);
+
+  // 获取交易启示
+  const tradingImplications = getIVTradingImplications(statusInfo.status, pcrStatus);
+
+  // 风险提示
+  const riskWarnings: string[] = [];
+  if (statusInfo.status === 'extreme') {
+    riskWarnings.push('极端高溢价，波动率可能进一步上行');
   }
-  
-  // 结合Gamma和PCR调整建议
-  if (gammaExposure && gammaExposure < -30 && pcr && pcr > 1.5) {
-    // 负Gamma + 高PCR + 正VRP的特殊情况
-    description += '；叠加负Gamma和高PCR环境，短期波动将持续处于高位，易出现暴涨暴跌';
-    tradingImplications.push(
-      '负Gamma+高PCR+正VRP组合：市场情绪恐慌性定价，反向看多胜率提升但需承受高波动',
-      '买入虚值看涨期权（Call）而非现货，规避短期暴跌风险',
-      '选择到期日1-2周的虚值Call，利用IV回落降低时间价值损耗'
-    );
-    riskWarnings.push(
-      '负Gamma环境下波动被剧烈放大，仓位控制在50%以下',
-      '选择流动性高的合约（买卖价差≤0.5%）'
-    );
+  if (vrpPercent > 20) {
+    riskWarnings.push('VRP过高，注意波动率回归风险');
   }
-  
+
   return {
     atmIV,
     hv,
@@ -218,35 +344,31 @@ export function analyzeIV(
     vrpPercent,
     callSkew,
     putSkew,
-    status,
-    statusLabel,
-    description,
+    status: statusInfo.status,
+    statusLabel: statusInfo.statusLabel,
+    description: statusInfo.description,
     tradingImplications,
     riskWarnings,
   };
 }
 
 /**
- * 格式化IV显示
+ * 格式化 IV 显示
+ * @param value IV 值（小数形式，如 0.2483）
+ * @returns 格式化后的字符串（如 "24.83%"）
  */
 export function formatIV(value: number): string {
   return `${(value * 100).toFixed(2)}%`;
 }
 
 /**
- * 格式化VRP显示
+ * 格式化 VRP 显示
+ * @param vrp VRP 值
+ * @param vrpPercent VRP 百分比
+ * @returns 格式化后的字符串
  */
-export function formatVRP(value: number): string {
-  const sign = value >= 0 ? '+' : '';
-  return `${sign}${(value * 100).toFixed(2)}%`;
-}
-
-/**
- * 获取VRP状态颜色
- */
-export function getVRPColor(vrpPercent: number): string {
-  if (vrpPercent < 5) return '#52c41a';      // 绿色 - 低溢价
-  if (vrpPercent < 15) return '#73d13d';     // 浅绿 - 正常
-  if (vrpPercent < 30) return '#faad14';     // 黄色 - 高溢价
-  return '#ff4d4f';                          // 红色 - 极端溢价
+export function formatVRP(vrp: number | undefined, vrpPercent: number | undefined): string {
+  const safeVrp = vrp ?? 0;
+  const safeVrpPercent = vrpPercent ?? 0;
+  return `+${(safeVrp * 100).toFixed(2)}% (${safeVrpPercent.toFixed(0)}%)`;
 }

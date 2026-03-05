@@ -1,261 +1,163 @@
 /**
- * OI Wall (持仓墙) 计算工具
+ * OI Wall (持仓量墙) 识别工具
  * 
- * 核心逻辑：量化期权未平仓合约（OI）在特定行权价的集中程度，
- * 基于期权对冲逻辑判定支撑/阻力
+ * 识别 Call Wall（阻力位）和 Put Wall（支撑位）
+ * 基于期权持仓量数据，识别市场关键价位
  */
 
 import type { OIData } from '../types';
 
-// 合约乘数：100股/合约
-const CONTRACT_MULTIPLIER = 100;
-
 /**
- * OI Wall 识别结果
+ * OI Wall 数据接口
  */
-export interface OIWallResult {
-  strike: number;
-  callOI: number;
-  putOI: number;
-  isCallWall: boolean;
-  isPutWall: boolean;
-  callConcentrationRatio: number;
-  putConcentrationRatio: number;
-  callIntensity: number;
-  putIntensity: number;
+export interface OIWall {
+  strike: number;           // 行权价
+  type: 'support' | 'resistance'; // 类型：支撑/阻力
+  strength: number;         // 强度（相对于平均OI的倍数）
+  callOI: number;           // Call 持仓量
+  putOI: number;            // Put 持仓量
+  totalOI: number;          // 总持仓量
 }
 
 /**
- * 方法1：相邻行权价对比法
- * 集中度比值(K) = OI(K) / ((OI(K-Δ) + OI(K+Δ)) / 2)
- * 
- * @param currentOI 当前行权价OI
- * @param leftOI 左侧相邻行权价OI
- * @param rightOI 右侧相邻行权价OI
- * @returns 集中度比值
+ * 最强支撑阻力接口
  */
-export function calculateConcentrationRatio(
-  currentOI: number,
-  leftOI: number,
-  rightOI: number
-): number {
-  const neighborAvg = (leftOI + rightOI) / 2;
-  if (neighborAvg === 0) return currentOI > 0 ? Infinity : 0;
-  return currentOI / neighborAvg;
+export interface StrongestSupportResistance {
+  strongestSupport: OIWall | null;    // 最强支撑
+  strongestResistance: OIWall | null; // 最强阻力
 }
 
 /**
- * 方法2：相对占比法
- * 计算单个行权价 OI 占总 OI 的比例
- * 
- * @param currentOI 当前行权价OI
- * @param totalOI 所有行权价总OI
- * @returns 占比 (0-1)
- */
-export function calculateRelativeRatio(
-  currentOI: number,
-  totalOI: number
-): number {
-  if (totalOI === 0) return 0;
-  return currentOI / totalOI;
-}
-
-/**
- * 方法3：绝对阈值法
- * 直接判定是否超过阈值
- * 
- * @param oi 持仓量
- * @param threshold 阈值（默认10000张）
- * @returns 是否超过阈值
- */
-export function checkAbsoluteThreshold(
-  oi: number,
-  threshold: number = 10000
-): boolean {
-  return oi >= threshold;
-}
-
-/**
- * 计算支撑/阻力强度
- * 强度 = OI(K) × 合约乘数 × (1 / |S - K|)
- * 
- * @param oi 持仓量
- * @param strike 行权价
+ * 识别 OI Walls
+ * @param data 持仓数据
  * @param currentPrice 当前价格
- * @returns 强度值
+ * @returns OI Wall 数组
  */
-export function calculateIntensity(
-  oi: number,
-  strike: number,
-  currentPrice: number
-): number {
-  const distance = Math.abs(currentPrice - strike);
-  if (distance === 0) {
-    // 如果正好在现价，给一个很高的强度值
-    return oi * CONTRACT_MULTIPLIER * 100;
+export function identifyOIWalls(data: OIData[], currentPrice: number): OIWall[] {
+  if (!data || data.length === 0 || !currentPrice) {
+    return [];
   }
-  return oi * CONTRACT_MULTIPLIER * (1 / distance);
-}
 
-/**
- * 识别 OI Wall（综合三种方法）
- * 
- * @param oiData 持仓数据
- * @param currentPrice 当前价格
- * @param options 配置选项
- * @returns OI Wall 识别结果
- */
-export function identifyOIWalls(
-  oiData: OIData[],
-  currentPrice: number,
-  options: {
-    concentrationThreshold?: number;  // 集中度阈值，默认2.0
-    relativeRatioThreshold?: number;  // 相对占比阈值，默认0.03 (3%)
-    absoluteThreshold?: number;       // 绝对阈值，默认10000
-  } = {}
-): OIWallResult[] {
-  const {
-    concentrationThreshold = 2.0,
-    relativeRatioThreshold = 0.03,
-    absoluteThreshold = 10000,
-  } = options;
+  const walls: OIWall[] = [];
 
-  const results: OIWallResult[] = [];
-  
-  // 计算总OI
-  const totalCallOI = oiData.reduce((sum, d) => sum + d.callOI, 0);
-  const totalPutOI = oiData.reduce((sum, d) => sum + d.putOI, 0);
+  // 计算平均 OI
+  const avgCallOI = data.reduce((sum, d) => sum + d.callOI, 0) / data.length;
+  const avgPutOI = data.reduce((sum, d) => sum + d.putOI, 0) / data.length;
+  const avgTotalOI = data.reduce((sum, d) => sum + d.callOI + d.putOI, 0) / data.length;
 
-  // 遍历每个行权价
-  for (let i = 0; i < oiData.length; i++) {
-    const data = oiData[i];
-    const { strike, callOI, putOI } = data;
-
-    // 获取相邻行权价的OI
-    const leftData = i > 0 ? oiData[i - 1] : null;
-    const rightData = i < oiData.length - 1 ? oiData[i + 1] : null;
-
-    // 方法1：相邻行权价对比法
-    let callConcentrationRatio = 0;
-    let putConcentrationRatio = 0;
-    
-    if (leftData && rightData) {
-      callConcentrationRatio = calculateConcentrationRatio(
-        callOI,
-        leftData.callOI,
-        rightData.callOI
-      );
-      putConcentrationRatio = calculateConcentrationRatio(
-        putOI,
-        leftData.putOI,
-        rightData.putOI
-      );
-    }
-
-    // 方法2：相对占比法
-    const callRelativeRatio = calculateRelativeRatio(callOI, totalCallOI);
-    const putRelativeRatio = calculateRelativeRatio(putOI, totalPutOI);
-
-    // 方法3：绝对阈值法
-    const isCallAbsoluteWall = checkAbsoluteThreshold(callOI, absoluteThreshold);
-    const isPutAbsoluteWall = checkAbsoluteThreshold(putOI, absoluteThreshold);
-
-    // 综合判定是否为 OI Wall
-    // 满足任一方法即可判定
-    const isCallWall = 
-      callConcentrationRatio >= concentrationThreshold ||
-      callRelativeRatio >= relativeRatioThreshold ||
-      isCallAbsoluteWall;
-    
-    const isPutWall = 
-      putConcentrationRatio >= concentrationThreshold ||
-      putRelativeRatio >= relativeRatioThreshold ||
-      isPutAbsoluteWall;
-
-    // 计算强度
-    const callIntensity = calculateIntensity(callOI, strike, currentPrice);
-    const putIntensity = calculateIntensity(putOI, strike, currentPrice);
-
-    results.push({
-      strike,
-      callOI,
-      putOI,
-      isCallWall,
-      isPutWall,
-      callConcentrationRatio,
-      putConcentrationRatio,
-      callIntensity,
-      putIntensity,
+  // 识别 Call Wall（阻力位）：Call OI 显著高于平均且行权价 > 现价
+  data
+    .filter(d => d.strike > currentPrice && d.callOI > avgCallOI * 1.3)
+    .forEach(d => {
+      walls.push({
+        strike: d.strike,
+        type: 'resistance',
+        strength: d.callOI / avgCallOI,
+        callOI: d.callOI,
+        putOI: d.putOI,
+        totalOI: d.callOI + d.putOI,
+      });
     });
-  }
 
-  return results;
+  // 识别 Put Wall（支撑位）：Put OI 显著高于平均且行权价 < 现价
+  data
+    .filter(d => d.strike < currentPrice && d.putOI > avgPutOI * 1.3)
+    .forEach(d => {
+      walls.push({
+        strike: d.strike,
+        type: 'support',
+        strength: d.putOI / avgPutOI,
+        callOI: d.callOI,
+        putOI: d.putOI,
+        totalOI: d.callOI + d.putOI,
+      });
+    });
+
+  // 按强度排序
+  return walls.sort((a, b) => b.strength - a.strength);
 }
 
 /**
- * 获取最强的支撑和阻力位
- * 
- * @param oiWallResults OI Wall 识别结果
- * @returns 最强支撑和阻力位
+ * 获取最强支撑和阻力
+ * @param walls OI Wall 数组
+ * @returns 最强支撑和阻力
  */
-export function getStrongestSupportResistance(
-  oiWallResults: OIWallResult[]
-): {
-  strongestSupport: OIWallResult | null;
-  strongestResistance: OIWallResult | null;
-} {
-  let strongestSupport: OIWallResult | null = null;
-  let strongestResistance: OIWallResult | null = null;
+export function getStrongestSupportResistance(walls: OIWall[]): StrongestSupportResistance {
+  const supports = walls.filter(w => w.type === 'support');
+  const resistances = walls.filter(w => w.type === 'resistance');
 
-  for (const result of oiWallResults) {
-    // 最强支撑（Put OI Wall 中强度最高的）
-    if (result.isPutWall) {
-      if (!strongestSupport || result.putIntensity > strongestSupport.putIntensity) {
-        strongestSupport = result;
-      }
-    }
-
-    // 最强阻力（Call OI Wall 中强度最高的）
-    if (result.isCallWall) {
-      if (!strongestResistance || result.callIntensity > strongestResistance.callIntensity) {
-        strongestResistance = result;
-      }
-    }
-  }
-
-  return { strongestSupport, strongestResistance };
+  return {
+    strongestSupport: supports.length > 0 ? supports[0] : null,
+    strongestResistance: resistances.length > 0 ? resistances[0] : null,
+  };
 }
 
 /**
  * 格式化 OI 显示
- * @param oi 持仓量
+ * @param value OI 值
  * @returns 格式化后的字符串
  */
-export function formatOI(oi: number): string {
-  if (oi >= 1000000) {
-    return `${(oi / 1000000).toFixed(2)}M`;
+export function formatOI(value: number): string {
+  if (value >= 1e6) {
+    return `${(value / 1e6).toFixed(2)}M`;
   }
-  if (oi >= 1000) {
-    return `${(oi / 1000).toFixed(1)}k`;
+  if (value >= 1e3) {
+    return `${(value / 1e3).toFixed(1)}K`;
   }
-  return oi.toString();
+  return value.toString();
 }
 
 /**
- * 获取 OI Wall 描述
- * @param result OI Wall 结果
- * @returns 描述文本
+ * 获取 OI Wall 状态标签
+ * @param wall OI Wall
+ * @returns 状态标签
  */
-export function getOIWallDescription(result: OIWallResult): string {
-  const parts: string[] = [];
-  
-  if (result.isCallWall) {
-    parts.push(`阻力位 $${result.strike} (Call OI: ${formatOI(result.callOI)})`);
+export function getOIWallStatusLabel(wall: OIWall): string {
+  if (wall.strength >= 3) {
+    return '极强';
+  } else if (wall.strength >= 2) {
+    return '强';
+  } else if (wall.strength >= 1.5) {
+    return '中等';
   }
-  
-  if (result.isPutWall) {
-    parts.push(`支撑位 $${result.strike} (Put OI: ${formatOI(result.putOI)})`);
+  return '弱';
+}
+
+/**
+ * 获取 OI Wall 颜色
+ * @param type Wall 类型
+ * @returns 颜色代码
+ */
+export function getOIWallColor(type: 'support' | 'resistance'): string {
+  return type === 'support' ? '#52c41a' : '#ff4d4f';
+}
+
+/**
+ * 计算价格到最近 OI Wall 的距离
+ * @param currentPrice 当前价格
+ * @param walls OI Wall 数组
+ * @returns 距离百分比
+ */
+export function calculateDistanceToOIWall(
+  currentPrice: number,
+  walls: OIWall[]
+): { nearestWall: OIWall | null; distancePercent: number } {
+  if (!walls || walls.length === 0) {
+    return { nearestWall: null, distancePercent: 0 };
   }
-  
-  return parts.join('，');
+
+  let minDistance = Infinity;
+  let nearestWall: OIWall | null = null;
+
+  for (const wall of walls) {
+    const distance = Math.abs(wall.strike - currentPrice);
+    if (distance < minDistance) {
+      minDistance = distance;
+      nearestWall = wall;
+    }
+  }
+
+  const distancePercent = nearestWall ? (minDistance / currentPrice) * 100 : 0;
+
+  return { nearestWall, distancePercent };
 }

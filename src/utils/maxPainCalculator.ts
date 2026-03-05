@@ -1,11 +1,14 @@
 /**
  * Max Pain (最大痛点) 计算工具
  * 
+ * 根据 LongPort API 返回的期权数据计算 Max Pain
+ * API 返回字段: strike_price, open_interest, direction (C/P)
+ * 
  * 计算逻辑：
  * 对于每个候选行权价 K，假设到期时标的资产价格为 S = K：
  * 
- * Call Loss(K) = max(S - K, 0) × 合约乘数 × Call OI(K)
- * Put Loss(K) = max(K - S, 0) × 合约乘数 × Put OI(K)
+ * Call Loss(K) = max(S - K, 0) × 合约乘数(100) × Call OI(K)
+ * Put Loss(K) = max(K - S, 0) × 合约乘数(100) × Put OI(K)
  * 
  * Total Pain(K) = Σ Call Loss(K) + Σ Put Loss(K)
  * 
@@ -77,7 +80,7 @@ export function calculateTotalPain(
 
 /**
  * 计算 Max Pain 和最大痛点曲线数据
- * @param oiData 持仓数据
+ * @param oiData 持仓数据 (从 LongPort API 获取并转换)
  * @returns Max Pain 价格和曲线数据
  */
 export function calculateMaxPain(oiData: OIData[]): {
@@ -85,9 +88,12 @@ export function calculateMaxPain(oiData: OIData[]): {
   maxPainCurve: MaxPainData[];
 } {
   if (!oiData || oiData.length === 0) {
+    console.log('[calculateMaxPain] 没有OI数据');
     return { maxPain: 0, maxPainCurve: [] };
   }
 
+  console.log('[calculateMaxPain] 开始计算，OI数据数量:', oiData.length);
+  
   const maxPainCurve: MaxPainData[] = [];
   let minPain = Infinity;
   let maxPainStrike = 0;
@@ -109,10 +115,59 @@ export function calculateMaxPain(oiData: OIData[]): {
     }
   }
 
+  console.log('[calculateMaxPain] 计算完成:', { 
+    maxPainStrike, 
+    minPain, 
+    curveCount: maxPainCurve.length 
+  });
+
   return {
     maxPain: maxPainStrike,
     maxPainCurve,
   };
+}
+
+/**
+ * 从 LongPort API 返回的原始数据转换为 OI 数据格式
+ * @param apiData LongPort API 返回的期权数据
+ * @returns 转换后的 OIData 数组
+ */
+export function convertApiDataToOIData(apiData: any[]): OIData[] {
+  if (!apiData || !Array.isArray(apiData)) {
+    return [];
+  }
+
+  // 按行权价分组，合并 Call 和 Put 的 OI
+  const strikeMap = new Map<number, { callOI: number; putOI: number }>();
+
+  for (const item of apiData) {
+    const strike = parseFloat(item.strike_price || item.strike || 0);
+    const oi = parseInt(item.open_interest || item.oi || 0, 10);
+    const direction = item.direction || '';
+
+    if (!strikeMap.has(strike)) {
+      strikeMap.set(strike, { callOI: 0, putOI: 0 });
+    }
+
+    const data = strikeMap.get(strike)!;
+    if (direction === 'C' || direction === 'Call') {
+      data.callOI += oi;
+    } else if (direction === 'P' || direction === 'Put') {
+      data.putOI += oi;
+    }
+  }
+
+  // 转换为数组并排序
+  const result: OIData[] = [];
+  strikeMap.forEach((data, strike) => {
+    result.push({
+      strike,
+      callOI: data.callOI,
+      putOI: data.putOI,
+    });
+  });
+
+  return result.sort((a, b) => a.strike - b.strike);
 }
 
 /**
@@ -131,6 +186,55 @@ export function formatDollarAmount(value: number): string {
     return `$${(value / 1e3).toFixed(2)}K`;
   }
   return `$${value.toFixed(2)}`;
+}
+
+/**
+ * 获取 Max Pain 距离现价的百分比
+ * @param maxPain Max Pain 价格
+ * @param currentPrice 当前价格
+ * @returns 百分比
+ */
+export function getMaxPainDistancePercent(maxPain: number, currentPrice: number): number {
+  if (!currentPrice || !maxPain) return 0;
+  return ((currentPrice - maxPain) / maxPain) * 100;
+}
+
+/**
+ * 获取 Max Pain 状态标签
+ * @param maxPain Max Pain 价格
+ * @param currentPrice 当前价格
+ * @returns 状态标签
+ */
+export function getMaxPainStatusLabel(maxPain: number, currentPrice: number): string {
+  const distance = getMaxPainDistancePercent(maxPain, currentPrice);
+  const absDistance = Math.abs(distance);
+  
+  if (absDistance <= 1) {
+    return '平';
+  } else if (absDistance <= 3) {
+    return distance > 0 ? '略高' : '略低';
+  } else {
+    return distance > 0 ? '高' : '低';
+  }
+}
+
+/**
+ * 获取 Max Pain 状态颜色
+ * @param maxPain Max Pain 价格
+ * @param currentPrice 当前价格
+ * @returns 颜色代码
+ */
+export function getMaxPainStatusColor(maxPain: number, currentPrice: number): string {
+  const distance = getMaxPainDistancePercent(maxPain, currentPrice);
+  const absDistance = Math.abs(distance);
+  
+  if (absDistance <= 1) {
+    return '#1890ff'; // 蓝色 - 平
+  } else if (absDistance <= 3) {
+    return '#faad14'; // 橙色 - 略高/略低
+  } else {
+    return '#ff4d4f'; // 红色 - 高/低
+  }
 }
 
 /**

@@ -22,7 +22,21 @@ const Settings: React.FC = () => {
   const handleSave = async (values: ApiConfig) => {
     setLoading(true);
     try {
-      saveApiConfig(values);
+      // 获取现有配置，保留 API 凭证信息
+      const existingConfig = getApiConfig();
+      
+      // 合并配置：新值覆盖旧值，但如果新值为空且旧值存在，则保留旧值
+      const mergedConfig: ApiConfig = {
+        ...existingConfig,
+        ...values,
+        // 确保 API 凭证不会被清空
+        baseUrl: values.baseUrl || existingConfig.baseUrl,
+        appKey: values.appKey || existingConfig.appKey,
+        appSecret: values.appSecret || existingConfig.appSecret,
+        accessToken: values.accessToken || existingConfig.accessToken,
+      };
+      
+      saveApiConfig(mergedConfig);
       message.success('配置已保存');
       setTestResult(null);
     } catch (error) {
@@ -54,7 +68,18 @@ const Settings: React.FC = () => {
       return;
     }
     
-    if (!values.appKey || !values.appSecret || !values.accessToken) {
+    // 获取现有配置以补充可能为空的字段
+    const existingConfig = getApiConfig();
+    const mergedValues: ApiConfig = {
+      ...existingConfig,
+      ...values,
+      baseUrl: values.baseUrl || existingConfig.baseUrl,
+      appKey: values.appKey || existingConfig.appKey,
+      appSecret: values.appSecret || existingConfig.appSecret,
+      accessToken: values.accessToken || existingConfig.accessToken,
+    };
+    
+    if (!mergedValues.appKey || !mergedValues.appSecret || !mergedValues.accessToken) {
       message.warning('请先填写完整的API配置信息');
       return;
     }
@@ -63,8 +88,8 @@ const Settings: React.FC = () => {
     setTestResult(null);
     
     try {
-      // 先保存配置
-      saveApiConfig(values);
+      // 先保存配置（使用合并后的配置）
+      saveApiConfig(mergedValues);
       
       // 测试连接
       const success = await testApiConnection();
@@ -78,7 +103,23 @@ const Settings: React.FC = () => {
     } catch (error) {
       console.error('Test connection error:', error);
       setTestResult(false);
-      message.error('API连接测试失败: ' + (error as Error).message);
+      const errorMessage = (error as Error).message;
+      
+      // 检查是否是网络连接超时错误
+      if (errorMessage.includes('ETIMEDOUT') || errorMessage.includes('timeout') || errorMessage.includes('502')) {
+        message.error(
+          <div>
+            <div>API连接测试失败：无法连接到 LongPort API 服务器</div>
+            <div style={{ fontSize: '12px', marginTop: '8px', color: '#999' }}>
+              可能原因：网络防火墙限制、地区访问限制或需要 VPN<br/>
+              建议：使用 Mock 数据模式继续测试应用功能
+            </div>
+          </div>,
+          5
+        );
+      } else {
+        message.error('API连接测试失败: ' + errorMessage);
+      }
     } finally {
       setTestLoading(false);
     }
@@ -235,6 +276,27 @@ const Settings: React.FC = () => {
           <br />
           API密钥信息将保存在浏览器本地存储中，请勿在公共设备上保存敏感信息。
         </Paragraph>
+
+        <Divider />
+
+        <Alert
+          type="info"
+          showIcon
+          message="网络连接问题？"
+          description={
+            <div>
+              如果无法连接到 LongPort API，可能是以下原因：
+              <ul style={{ marginTop: '8px', paddingLeft: '20px' }}>
+                <li>网络防火墙阻止了对外部 API 的访问</li>
+                <li>LongPort API 在当前地区不可用</li>
+                <li>需要使用 VPN 才能访问该服务</li>
+              </ul>
+              <div style={{ marginTop: '8px' }}>
+                <Text strong>解决方案：</Text> 开启上方的"使用Mock数据"开关，可以在没有 API 连接的情况下继续使用应用的所有功能进行测试。
+              </div>
+            </div>
+          }
+        />
       </Card>
     </div>
   );

@@ -44,6 +44,10 @@ export interface OptionAnalysisData {
   oiData: OIData[];
   maxPainCurve: MaxPainData[];
   lastUpdated: string;
+  gexData?: any;
+  pcrData?: any;
+  ivData?: any;
+  optionChain?: any[];
 }
 
 export interface ExpiryDate {

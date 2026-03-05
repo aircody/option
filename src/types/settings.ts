@@ -10,6 +10,6 @@ export const defaultApiConfig: ApiConfig = {
   appKey: '',
   appSecret: '',
   accessToken: '',
-  baseUrl: 'https://openapi.longportapp.com',
+  baseUrl: 'https://openapi.longbridge.com',
   useMock: true,
 };

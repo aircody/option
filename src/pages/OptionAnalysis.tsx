@@ -26,6 +26,8 @@ const OptionAnalysis: React.FC = () => {
   const [data, setData] = useState<OptionAnalysisData | null>(null);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('strategy');
+  // 记录数据获取时间
+  const [lastFetchTime, setLastFetchTime] = useState<string>('');
 
   // 加载到期日列表
   const loadExpiryDates = useCallback(async (symbol: string) => {
@@ -57,6 +59,18 @@ const OptionAnalysis: React.FC = () => {
       const result = await fetchOptionAnalysis(symbol, expiryDate);
       console.log('[Debug] Loaded option data:', result);
       setData(result);
+      // 更新数据获取时间（美东时间）
+      const now = new Date();
+      const easternTime = now.toLocaleString('zh-CN', {
+        timeZone: 'America/New_York',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      });
+      setLastFetchTime(easternTime);
     } catch (error) {
       console.error('[Debug] Failed to load option data:', error);
       message.error('加载期权数据失败: ' + (error as Error).message);
@@ -132,17 +146,29 @@ const OptionAnalysis: React.FC = () => {
     }
   };
 
-  // 计算合约数量
+  // 计算合约数量 - 根据当前选中的到期日
   const getContractCount = () => {
     if (!data || !data.oiData) return 0;
     // 每个执行价有 Call 和 Put 两个合约
     return data.oiData.length * 2;
   };
 
+  // 格式化合约数量显示
+  const formatContractCount = () => {
+    const count = getContractCount();
+    return count > 0 ? `${count} 个合约` : '暂无合约数据';
+  };
+
   // 获取选中的到期日标签
   const getSelectedExpiryLabel = () => {
     const selected = expiryDates.find(d => d.date === selectedExpiry);
     return selected ? selected.label : '';
+  };
+
+  // 计算距离到期天数
+  const getDaysToExpiry = () => {
+    const selected = expiryDates.find(d => d.date === selectedExpiry);
+    return selected ? selected.daysToExpiry : 30;
   };
 
   const renderContent = () => {
@@ -188,14 +214,11 @@ const OptionAnalysis: React.FC = () => {
           {data && (
             <div style={{ marginTop: '12px' }}>
               <Text type="secondary" style={{ fontSize: '12px' }}>
-                {data.symbol} 分析完成 — {getSelectedExpiryLabel()} ({selectedExpiry}) — {getContractCount()} 个合约
+                {data.symbol} 分析完成 — {getSelectedExpiryLabel()} ({selectedExpiry}) — {formatContractCount()}
               </Text>
               <br />
               <Text type="secondary" style={{ fontSize: '12px' }}>
-                上次分析: {data.lastUpdated} 美东{' '}
-                <a href="#" style={{ color: '#1890ff' }} onClick={(e) => { e.preventDefault(); handleAnalyze(); }}>
-                  刷新
-                </a>
+                上次分析: {lastFetchTime || data.lastUpdated} 美东
               </Text>
             </div>
           )}
@@ -226,6 +249,7 @@ const OptionAnalysis: React.FC = () => {
                             data={data.oiData}
                             maxPain={data.maxPain}
                             currentPrice={data.lastPrice}
+                            daysToExpiry={getDaysToExpiry()}
                           />
                         </Col>
                         <Col xs={24} lg={12}>
@@ -233,6 +257,8 @@ const OptionAnalysis: React.FC = () => {
                             data={data.maxPainCurve}
                             maxPainStrike={data.maxPain}
                             currentPrice={data.lastPrice}
+                            daysToExpiry={getDaysToExpiry()}
+                            oiData={data.oiData}
                           />
                         </Col>
                       </Row>
@@ -264,6 +290,8 @@ const OptionAnalysis: React.FC = () => {
                             vrp={data.vrp}
                             gammaExposure={data.gammaExposure}
                             pcr={data.putCallRatio}
+                            ivData={data.ivData}
+                            optionChain={data.optionChain}
                           />
                         </Col>
                         <Col xs={24} lg={12}>
@@ -273,6 +301,8 @@ const OptionAnalysis: React.FC = () => {
                             atmIV={data.atmIv}
                             pcr={data.putCallRatio}
                             gammaExposure={data.gammaExposure}
+                            ivData={data.ivData}
+                            optionChain={data.optionChain}
                           />
                         </Col>
                       </Row>
@@ -295,11 +325,7 @@ const OptionAnalysis: React.FC = () => {
           </>
         ) : null}
 
-        <div style={{ textAlign: 'right', marginTop: '16px' }}>
-          <Text type="secondary" style={{ fontSize: '12px' }}>
-            使用: {new Date().toLocaleString('zh-CN')}
-          </Text>
-        </div>
+
       </>
     );
   };

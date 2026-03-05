@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useMemo } from 'react';
 import * as echarts from 'echarts';
 import { Card, Typography, Tag, Space, Divider, List } from 'antd';
-import { calculateGEX, analyzeGEX, formatGEX, getGEXStatusLabel } from '../utils/gexCalculator';
+import { calculateGEX, analyzeGEX, formatGEX } from '../utils/gexCalculator';
 import type { GEXData } from '../utils/gexCalculator';
 
 const { Text, Title } = Typography;
@@ -19,12 +19,11 @@ const GEXChart: React.FC<GEXChartProps> = ({ oiData, currentPrice, gammaExposure
   // 计算GEX数据
   const { gexData, analysis } = useMemo(() => {
     const gexData = calculateGEX(oiData, currentPrice);
-    const analysis = analyzeGEX(gexData, currentPrice);
+    const analysis = analyzeGEX(oiData, currentPrice);
     return { gexData, analysis };
   }, [oiData, currentPrice]);
 
-  // 获取状态标签
-  const statusLabel = getGEXStatusLabel(analysis.status);
+  // 状态标签已经在 analysis.statusLabel 中
 
   // 找到当前价格对应的GEX索引
   const currentPriceIndex = useMemo(() => {
@@ -174,7 +173,7 @@ const GEXChart: React.FC<GEXChartProps> = ({ oiData, currentPrice, gammaExposure
               type: 'dashed',
             },
             label: {
-              formatter: '现价 $${c}',
+              formatter: `现价 $${currentPrice}`,
               position: 'end',
               fontSize: 10,
               color: '#1890ff',
@@ -237,8 +236,8 @@ const GEXChart: React.FC<GEXChartProps> = ({ oiData, currentPrice, gammaExposure
             <Text strong style={{ fontSize: 16 }}>
               Total GEX: {formatGEX(analysis.totalGEX)}
             </Text>
-            <Tag color={statusLabel.color} style={{ margin: 0 }}>
-              {statusLabel.label}
+            <Tag color={analysis.status === 'extreme_negative' || analysis.status === 'negative' ? '#ff4d4f' : '#52c41a'} style={{ margin: 0 }}>
+              {analysis.statusLabel}
             </Tag>
           </Space>
           

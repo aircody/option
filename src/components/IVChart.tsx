@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useMemo } from 'react';
 import * as echarts from 'echarts';
 import { Card, Typography, Tag, Space, Divider, List, Row, Col, Statistic } from 'antd';
-import { calculateIVData, analyzeIV, formatIV, formatVRP, getVRPColor } from '../utils/ivCalculator';
+import { extractIVDataFromApiOption, analyzeVRPStatus, formatIV, formatVRP } from '../utils/ivCalculator';
 import type { IVData } from '../utils/ivCalculator';
 
 const { Text, Title } = Typography;
@@ -14,6 +14,8 @@ interface IVChartProps {
   vrp?: number;
   gammaExposure?: number;
   pcr?: number;
+  ivData?: any;
+  optionChain?: any[];
 }
 
 const IVChart: React.FC<IVChartProps> = ({ 
@@ -23,25 +25,34 @@ const IVChart: React.FC<IVChartProps> = ({
   hv, 
   vrp,
   gammaExposure,
-  pcr 
+  pcr,
+  ivData,
+  optionChain
 }) => {
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<echarts.ECharts | null>(null);
 
-  // 计算IV数据
-  const { ivData, analysis } = useMemo(() => {
-    const ivData = calculateIVData(oiData, currentPrice);
-    const analysis = analyzeIV(ivData, currentPrice, gammaExposure, pcr);
-    return { ivData, analysis };
-  }, [oiData, currentPrice, gammaExposure, pcr]);
+  // 辅助函数：获取VRP颜色
+  const getVRPColor = (vrpPercent: number): string => {
+    const status = analyzeVRPStatus(vrpPercent);
+    return status.color;
+  };
 
-  // 获取VRP颜色
-  const vrpColor = getVRPColor(analysis.vrpPercent);
+  // 提取IV数据用于图表
+  const ivDataArray = useMemo(() => {
+    if (optionChain) {
+      return extractIVDataFromApiOption(optionChain, currentPrice);
+    }
+    return [];
+  }, [optionChain, currentPrice]);
+
+  // 获取VRP颜色 - 直接使用传入的vrp值
+  const vrpColor = getVRPColor(vrp || 0);
 
   // 找到当前价格对应的IV索引
   const currentPriceIndex = useMemo(() => {
-    return ivData.findIndex(d => d.strike >= currentPrice);
-  }, [ivData, currentPrice]);
+    return ivDataArray.findIndex(d => d.strike >= currentPrice);
+  }, [ivDataArray, currentPrice]);
 
   useEffect(() => {
     if (!chartRef.current) return;
@@ -51,10 +62,15 @@ const IVChart: React.FC<IVChartProps> = ({
       chartInstance.current = echarts.init(chartRef.current);
     }
 
-    const strikes = ivData.map(d => d.strike);
-    const callIVValues = ivData.map(d => d.callIV * 100);
-    const putIVValues = ivData.map(d => d.putIV * 100);
-    const atmIVValues = ivData.map(d => d.atmIV * 100);
+    const strikes = ivDataArray.map(d => d.strike);
+    const callIVValues = ivDataArray.map(d => d.callIV * 100);
+    const putIVValues = ivDataArray.map(d => d.putIV * 100);
+    const atmIVValues = ivDataArray.map(d => d.avgIV * 100);
+
+    // 安全检查：如果没有数据，使用默认值
+    const hasData = strikes.length > 0;
+    const minIV = hasData ? Math.min(...atmIVValues) * 0.8 : 10;
+    const maxIV = hasData ? Math.max(...callIVValues, ...putIVValues) * 1.1 : 50;
 
     const option: echarts.EChartsOption = {
       backgroundColor: 'transparent',
@@ -123,8 +139,8 @@ const IVChart: React.FC<IVChartProps> = ({
             type: 'dashed',
           },
         },
-        min: Math.min(...atmIVValues) * 0.8,
-        max: Math.max(...callIVValues, ...putIVValues) * 1.1,
+        min: minIV,
+        max: maxIV,
       },
       series: [
         {
@@ -197,7 +213,7 @@ const IVChart: React.FC<IVChartProps> = ({
               type: 'dashed',
             },
             label: {
-              formatter: '现价 $${c}',
+              formatter: `现价 $${currentPrice}`,
               position: 'end',
               fontSize: 10,
               color: '#1890ff',
@@ -219,7 +235,7 @@ const IVChart: React.FC<IVChartProps> = ({
     return () => {
       window.removeEventListener('resize', handleResize);
     };
-  }, [ivData, currentPrice, currentPriceIndex]);
+  }, [ivDataArray, currentPrice, currentPriceIndex]);
 
   return (
     <Card
@@ -239,21 +255,21 @@ const IVChart: React.FC<IVChartProps> = ({
           <Col span={8}>
             <Statistic
               title={<Text style={{ fontSize: 11 }}>ATM IV</Text>}
-              value={formatIV(analysis.atmIV)}
+              value={formatIV(atmIv || 0)}
               valueStyle={{ fontSize: 18, color: '#1890ff', fontWeight: 'bold' }}
             />
           </Col>
           <Col span={8}>
             <Statistic
               title={<Text style={{ fontSize: 11 }}>HV (历史波动率)</Text>}
-              value={formatIV(analysis.hv)}
+              value={formatIV(hv || 0)}
               valueStyle={{ fontSize: 18, color: '#666' }}
             />
           </Col>
           <Col span={8}>
             <Statistic
               title={<Text style={{ fontSize: 11 }}>VRP (波动率溢价)</Text>}
-              value={formatVRP(analysis.vrp)}
+              value={formatVRP((vrp || 0) / 100, vrp || 0)}
               valueStyle={{ fontSize: 18, color: vrpColor, fontWeight: 'bold' }}
             />
           </Col>
@@ -262,16 +278,16 @@ const IVChart: React.FC<IVChartProps> = ({
         <div style={{ marginTop: 12 }}>
           <Space align="center">
             <Tag color={vrpColor} style={{ margin: 0 }}>
-              {analysis.statusLabel}
+              {analyzeVRPStatus(vrp || 0).statusLabel}
             </Tag>
             <Text type="secondary" style={{ fontSize: 11 }}>
-              溢价幅度: {analysis.vrpPercent.toFixed(1)}%
+              溢价幅度: {(vrp || 0).toFixed(1)}%
             </Text>
           </Space>
         </div>
 
         <Text type="secondary" style={{ fontSize: 11, marginTop: 8, display: 'block' }}>
-          {analysis.description}
+          {analyzeVRPStatus(vrp || 0).description}
         </Text>
       </div>
 
@@ -283,14 +299,14 @@ const IVChart: React.FC<IVChartProps> = ({
         <Row gutter={[8, 4]}>
           <Col span={12}>
             <div style={{ padding: '4px', background: '#fff', borderRadius: 4 }}>
-              <Text style={{ fontSize: 10, color: '#1890ff' }}>ATM IV = {formatIV(analysis.atmIV)}</Text>
+              <Text style={{ fontSize: 10, color: '#1890ff' }}>ATM IV = {formatIV(atmIv || 0)}</Text>
               <br />
               <Text style={{ fontSize: 9, color: '#999' }}>市场预期未来波动</Text>
             </div>
           </Col>
           <Col span={12}>
             <div style={{ padding: '4px', background: '#fff', borderRadius: 4 }}>
-              <Text style={{ fontSize: 10, color: '#666' }}>HV = {formatIV(analysis.hv)}</Text>
+              <Text style={{ fontSize: 10, color: '#666' }}>HV = {formatIV(hv || 0)}</Text>
               <br />
               <Text style={{ fontSize: 9, color: '#999' }}>历史实际波动</Text>
             </div>
@@ -298,7 +314,7 @@ const IVChart: React.FC<IVChartProps> = ({
         </Row>
         <div style={{ marginTop: 8, textAlign: 'center' }}>
           <Text style={{ fontSize: 11 }}>
-            VRP = ATM IV - HV = <span style={{ color: vrpColor, fontWeight: 'bold' }}>{formatVRP(analysis.vrp)}</span>
+            VRP = ATM IV - HV = <span style={{ color: vrpColor, fontWeight: 'bold' }}>{formatVRP((vrp || 0) / 100, vrp || 0)}</span>
           </Text>
         </div>
       </div>
@@ -313,7 +329,7 @@ const IVChart: React.FC<IVChartProps> = ({
         </Text>
         <List
           size="small"
-          dataSource={analysis.tradingImplications.slice(0, 3)}
+          dataSource={(ivData?.tradingImplications || []).slice(0, 3)}
           renderItem={(item) => (
             <List.Item style={{ padding: '4px 0', fontSize: 11, color: '#666' }}>
               • {item}
@@ -323,14 +339,14 @@ const IVChart: React.FC<IVChartProps> = ({
       </div>
 
       {/* 风险提示 */}
-      {analysis.riskWarnings.length > 0 && (
+      {ivData?.riskWarnings && ivData.riskWarnings.length > 0 && (
         <div style={{ marginTop: 12, padding: 8, background: '#fff2f0', borderRadius: 4 }}>
           <Text strong style={{ fontSize: 11, color: '#ff4d4f' }}>
             ⚠️ 风险提示：
           </Text>
           <List
             size="small"
-            dataSource={analysis.riskWarnings.slice(0, 2)}
+            dataSource={ivData.riskWarnings.slice(0, 2)}
             renderItem={(item) => (
               <List.Item style={{ padding: '2px 0', fontSize: 10, color: '#ff7875' }}>
                 • {item}

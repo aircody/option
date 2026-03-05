@@ -3,22 +3,40 @@ import * as echarts from 'echarts';
 import { Card } from 'antd';
 import type { OIData } from '../types';
 import { identifyOIWalls, getStrongestSupportResistance, formatOI } from '../utils/oiWallCalculator';
+import { filterStrikesByPriceRange, estimateAverageIV } from '../utils/priceRangeCalculator';
 
 interface OIWallChartProps {
   data: OIData[];
   maxPain: number;
   currentPrice?: number;
+  daysToExpiry?: number;
 }
 
-const OIWallChart: React.FC<OIWallChartProps> = ({ data, maxPain, currentPrice }) => {
+const OIWallChart: React.FC<OIWallChartProps> = ({ 
+  data, 
+  maxPain, 
+  currentPrice,
+  daysToExpiry = 30 
+}) => {
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<echarts.ECharts | null>(null);
 
-  // 计算 OI Wall
+  // 估算平均 IV
+  const averageIV = useMemo(() => {
+    return estimateAverageIV(data);
+  }, [data]);
+
+  // 过滤行权价，只保留现价附近合理范围的
+  const filteredData = useMemo(() => {
+    if (!currentPrice || data.length === 0) return data;
+    return filterStrikesByPriceRange(data, currentPrice, averageIV, daysToExpiry);
+  }, [data, currentPrice, averageIV, daysToExpiry]);
+
+  // 计算 OI Wall（使用过滤后的数据）
   const oiWallResults = useMemo(() => {
-    if (!currentPrice || data.length === 0) return [];
-    return identifyOIWalls(data, currentPrice);
-  }, [data, currentPrice]);
+    if (!currentPrice || filteredData.length === 0) return [];
+    return identifyOIWalls(filteredData, currentPrice);
+  }, [filteredData, currentPrice]);
 
   // 获取最强支撑和阻力
   const { strongestSupport, strongestResistance } = useMemo(() => {
@@ -32,9 +50,9 @@ const OIWallChart: React.FC<OIWallChartProps> = ({ data, maxPain, currentPrice }
       chartInstance.current = echarts.init(chartRef.current);
     }
 
-    const strikes = data.map((d) => d.strike);
-    const callOIs = data.map((d) => d.callOI);
-    const putOIs = data.map((d) => d.putOI);
+    const strikes = filteredData.map((d) => d.strike);
+    const callOIs = filteredData.map((d) => d.callOI);
+    const putOIs = filteredData.map((d) => d.putOI);
 
     // 找到最接近现价的执行价索引
     let currentPriceIndex = -1;
@@ -49,7 +67,7 @@ const OIWallChart: React.FC<OIWallChartProps> = ({ data, maxPain, currentPrice }
       });
     }
 
-    // 找到 Max Pain 的执行价索引
+    // 找到 Max Pain 的执行价索引（在过滤后的数据中）
     let maxPainIndex = -1;
     if (maxPain && strikes.length > 0) {
       strikes.forEach((strike, index) => {

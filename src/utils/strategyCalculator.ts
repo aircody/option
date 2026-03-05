@@ -5,12 +5,10 @@
  * 综合分析市场环境，生成可落地的交易策略建议
  */
 
-import { calculateGEX, analyzeGEX } from './gexCalculator';
-import { calculatePCR, analyzePCR } from './pcrCalculator';
-import { calculateIVData, analyzeIV } from './ivCalculator';
-import { calculateSkewData, analyzeSkew } from './skewCalculator';
+import { analyzeGEX } from './gexCalculator';
+import { analyzePCR } from './pcrCalculator';
+import { analyzeIV } from './ivCalculator';
 import { calculateMaxPain } from './maxPainCalculator';
-import { identifyOIWalls } from './oiWallCalculator';
 
 export interface MarketEnvironment {
   type: 'low_volatility' | 'high_volatility' | 'extreme_low' | 'extreme_high';
@@ -391,20 +389,16 @@ export function generateStrategyRecommendation(
   ivPercentile: number = 50
 ): StrategyRecommendation {
   // 计算所有指标
-  const gexData = calculateGEX(oiData, currentPrice);
-  const gexAnalysis = analyzeGEX(gexData, currentPrice);
+  const gexAnalysis = analyzeGEX(oiData, currentPrice);
   
-  const pcrData = calculatePCR(oiData);
-  const pcrAnalysis = analyzePCR(pcrData);
+  const pcrAnalysis = analyzePCR(oiData);
   
-  const ivData = calculateIVData(oiData, currentPrice);
-  const ivAnalysis = analyzeIV(ivData, currentPrice);
-  
-  const skewData = calculateSkewData(oiData, currentPrice, ivAnalysis.atmIV);
-  const skewAnalysis = analyzeSkew(skewData, ivAnalysis.atmIV);
+  const ivAnalysis = analyzeIV(oiData, currentPrice, pcrAnalysis.status);
   
   const { maxPain } = calculateMaxPain(oiData);
-  const oiWalls = identifyOIWalls(oiData, currentPrice);
+  
+  // 识别 OI Walls（简化实现）
+  const oiWalls = identifyOIWallsSimple(oiData, currentPrice);
   const callWalls = oiWalls.filter(w => w.type === 'resistance').map(w => w.strike);
   const putWalls = oiWalls.filter(w => w.type === 'support').map(w => w.strike);
   
@@ -418,19 +412,19 @@ export function generateStrategyRecommendation(
   // 分析各方向信号
   const bullishSignal = analyzeBullishSignal(
     currentPrice, maxPain, gexAnalysis.totalGEX,
-    pcrAnalysis.pcrOI, ivAnalysis.vrp, skewAnalysis.skew25Delta,
+    pcrAnalysis.pcrOI, ivAnalysis.vrp, ivAnalysis.putSkew,
     callWalls, putWalls
   );
   
   const bearishSignal = analyzeBearishSignal(
     currentPrice, maxPain, gexAnalysis.totalGEX,
-    pcrAnalysis.pcrOI, ivAnalysis.vrp, skewAnalysis.skew25Delta,
+    pcrAnalysis.pcrOI, ivAnalysis.vrp, ivAnalysis.putSkew,
     callWalls, putWalls
   );
   
   const rangeSignal = analyzeRangeSignal(
     currentPrice, gexAnalysis.totalGEX, ivAnalysis.vrp,
-    skewAnalysis.skew25Delta, callWalls, putWalls, maxPain
+    ivAnalysis.putSkew, callWalls, putWalls, maxPain
   );
   
   // 选择最强信号
@@ -553,6 +547,50 @@ export function getRiskLevelColor(level: StrategyRecommendation['riskLevel']): s
     case 'extreme': return '#ff4d4f';
     default: return '#999';
   }
+}
+
+/**
+ * 简化版 OI Wall 识别
+ * 识别 Call Wall（阻力位）和 Put Wall（支撑位）
+ */
+function identifyOIWallsSimple(
+  oiData: { strike: number; callOI: number; putOI: number }[],
+  currentPrice: number
+): { strike: number; type: 'resistance' | 'support'; strength: number }[] {
+  if (!oiData || oiData.length === 0) {
+    return [];
+  }
+
+  const walls: { strike: number; type: 'resistance' | 'support'; strength: number }[] = [];
+
+  // 计算平均 OI
+  const avgCallOI = oiData.reduce((sum, d) => sum + d.callOI, 0) / oiData.length;
+  const avgPutOI = oiData.reduce((sum, d) => sum + d.putOI, 0) / oiData.length;
+
+  // 识别 Call Wall（阻力位）：Call OI 显著高于平均且行权价 > 现价
+  oiData
+    .filter(d => d.strike > currentPrice && d.callOI > avgCallOI * 1.5)
+    .forEach(d => {
+      walls.push({
+        strike: d.strike,
+        type: 'resistance',
+        strength: d.callOI / avgCallOI,
+      });
+    });
+
+  // 识别 Put Wall（支撑位）：Put OI 显著高于平均且行权价 < 现价
+  oiData
+    .filter(d => d.strike < currentPrice && d.putOI > avgPutOI * 1.5)
+    .forEach(d => {
+      walls.push({
+        strike: d.strike,
+        type: 'support',
+        strength: d.putOI / avgPutOI,
+      });
+    });
+
+  // 按强度排序
+  return walls.sort((a, b) => b.strength - a.strength);
 }
 
 /**
