@@ -1,4 +1,5 @@
 import type { OptionAnalysisData, ExpiryDate } from '../types';
+import { calculateMaxPain } from '../utils/maxPainCalculator';
 
 export const mockExpiryDates: ExpiryDate[] = [
   { label: '今日ODTE', date: '2026-03-05', daysToExpiry: 0 },
@@ -19,6 +20,9 @@ export const generateMockOIData = (basePrice: number): { strike: number; callOI:
     const maxOIDistance = basePrice * 0.15;
     const oiIntensity = Math.max(0, 1 - distanceFromBase / maxOIDistance);
 
+    // 在ATM附近，Call和Put的OI都较高
+    // 在OTM Call区域，Call OI较高
+    // 在OTM Put区域，Put OI较高
     const callOI = strike > basePrice
       ? Math.floor(50000 * oiIntensity * (0.5 + Math.random() * 0.5))
       : Math.floor(15000 * oiIntensity * Math.random());
@@ -37,18 +41,13 @@ export const generateMockOIData = (basePrice: number): { strike: number; callOI:
   return data;
 };
 
+/**
+ * 使用新的 Max Pain 计算逻辑生成数据
+ */
 export const generateMockMaxPainData = (basePrice: number, oiData: { strike: number; callOI: number; putOI: number }[]): { strike: number; totalPain: number }[] => {
-  return oiData.map(({ strike, callOI, putOI }) => {
-    let totalPain = 0;
-    oiData.forEach(({ strike: s, callOI: c, putOI: p }) => {
-      if (s < strike) {
-        totalPain += c * (strike - s);
-      } else if (s > strike) {
-        totalPain += p * (s - strike);
-      }
-    });
-    return { strike, totalPain };
-  });
+  // 使用新的 Max Pain 计算工具
+  const { maxPainCurve } = calculateMaxPain(oiData);
+  return maxPainCurve;
 };
 
 export const mockOptionData: Record<string, OptionAnalysisData> = {
@@ -102,33 +101,73 @@ export const mockOptionData: Record<string, OptionAnalysisData> = {
   },
 };
 
+// 初始化时使用新的 Max Pain 计算
 Object.keys(mockOptionData).forEach((symbol) => {
   const data = mockOptionData[symbol];
-  data.maxPainCurve = generateMockMaxPainData(data.lastPrice, data.oiData);
+  const { maxPain, maxPainCurve } = calculateMaxPain(data.oiData);
+  data.maxPain = maxPain;
+  data.maxPainCurve = maxPainCurve;
 });
 
-export const getMockOptionData = (symbol: string): OptionAnalysisData => {
+export const getMockOptionData = (symbol: string, expiryDate?: string): OptionAnalysisData => {
   const upperSymbol = symbol.toUpperCase();
+  
+  // 根据到期日生成不同的数据（模拟不同到期日的合约数量不同）
+  const getExpiryMultiplier = (date?: string): number => {
+    if (!date) return 1;
+    // 近期到期日合约数量较少，远期较多
+    const today = new Date();
+    const expiry = new Date(date);
+    const daysDiff = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    if (daysDiff <= 1) return 0.6; // 0-1 DTE
+    if (daysDiff <= 7) return 0.8; // 本周
+    if (daysDiff <= 14) return 1.0; // 下周
+    if (daysDiff <= 30) return 1.2; // 月度
+    return 1.5; // 远期
+  };
+  
+  const multiplier = getExpiryMultiplier(expiryDate);
+  
   if (mockOptionData[upperSymbol]) {
-    return mockOptionData[upperSymbol];
+    const data = { ...mockOptionData[upperSymbol] };
+    // 根据到期日调整合约数量
+    const targetLength = Math.floor(data.oiData.length * multiplier);
+    // 截取中间部分来模拟不同到期日的不同执行价范围
+    const startIdx = Math.floor((data.oiData.length - targetLength) / 2);
+    data.oiData = data.oiData.slice(startIdx, startIdx + targetLength);
+    
+    // 使用新的 Max Pain 计算
+    const { maxPain, maxPainCurve } = calculateMaxPain(data.oiData);
+    data.maxPain = maxPain;
+    data.maxPainCurve = maxPainCurve;
+    
+    return data;
   }
 
   const basePrice = 500 + Math.random() * 200;
   const oiData = generateMockOIData(basePrice);
+  // 根据到期日调整合约数量
+  const targetLength = Math.floor(oiData.length * multiplier);
+  const startIdx = Math.floor((oiData.length - targetLength) / 2);
+  const adjustedOiData = oiData.slice(startIdx, startIdx + targetLength);
+  
+  // 使用新的 Max Pain 计算
+  const { maxPain, maxPainCurve } = calculateMaxPain(adjustedOiData);
+  
   return {
     symbol: upperSymbol,
     lastPrice: basePrice,
     priceChange: (Math.random() - 0.5) * 10,
     priceChangePercent: (Math.random() - 0.5) * 2,
-    maxPain: Math.floor(basePrice / 5) * 5,
+    maxPain,
     gammaExposure: -(20 + Math.random() * 40),
     putCallRatio: 0.8 + Math.random() * 1.5,
     atmIv: 15 + Math.random() * 15,
     skew: 1 + Math.random() * 5,
     hv: 12 + Math.random() * 10,
     vrp: 2 + Math.random() * 5,
-    oiData,
-    maxPainCurve: generateMockMaxPainData(basePrice, oiData),
+    oiData: adjustedOiData,
+    maxPainCurve,
     lastUpdated: new Date().toLocaleString('zh-CN'),
   };
 };

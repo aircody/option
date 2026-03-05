@@ -1,0 +1,285 @@
+import React, { useEffect, useRef, useMemo } from 'react';
+import * as echarts from 'echarts';
+import { Card, Typography, Tag, Space, Divider, List } from 'antd';
+import { calculateGEX, analyzeGEX, formatGEX, getGEXStatusLabel } from '../utils/gexCalculator';
+import type { GEXData } from '../utils/gexCalculator';
+
+const { Text, Title } = Typography;
+
+interface GEXChartProps {
+  oiData: { strike: number; callOI: number; putOI: number }[];
+  currentPrice: number;
+  gammaExposure?: number;
+}
+
+const GEXChart: React.FC<GEXChartProps> = ({ oiData, currentPrice, gammaExposure }) => {
+  const chartRef = useRef<HTMLDivElement>(null);
+  const chartInstance = useRef<echarts.ECharts | null>(null);
+
+  // 计算GEX数据
+  const { gexData, analysis } = useMemo(() => {
+    const gexData = calculateGEX(oiData, currentPrice);
+    const analysis = analyzeGEX(gexData, currentPrice);
+    return { gexData, analysis };
+  }, [oiData, currentPrice]);
+
+  // 获取状态标签
+  const statusLabel = getGEXStatusLabel(analysis.status);
+
+  // 找到当前价格对应的GEX索引
+  const currentPriceIndex = useMemo(() => {
+    return gexData.findIndex(d => d.strike >= currentPrice);
+  }, [gexData, currentPrice]);
+
+  useEffect(() => {
+    if (!chartRef.current) return;
+
+    // 初始化图表
+    if (!chartInstance.current) {
+      chartInstance.current = echarts.init(chartRef.current);
+    }
+
+    const strikes = gexData.map(d => d.strike);
+    const callGEXValues = gexData.map(d => d.callGEX / 1e9); // 转换为十亿
+    const putGEXValues = gexData.map(d => d.putGEX / 1e9);
+    const totalGEXValues = gexData.map(d => d.totalGEX / 1e9);
+
+    const option: echarts.EChartsOption = {
+      backgroundColor: 'transparent',
+      grid: {
+        left: '3%',
+        right: '4%',
+        bottom: '10%',
+        top: '15%',
+        containLabel: true,
+      },
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: {
+          type: 'cross',
+        },
+        formatter: (params: any) => {
+          const strike = params[0].axisValue;
+          const totalGEX = params.find((p: any) => p.seriesName === 'Total GEX')?.value || 0;
+          const callGEX = params.find((p: any) => p.seriesName === 'Call GEX')?.value || 0;
+          const putGEX = params.find((p: any) => p.seriesName === 'Put GEX')?.value || 0;
+          
+          return `
+            <div style="font-weight: bold; margin-bottom: 8px;">Strike: $${strike}</div>
+            <div style="color: #722ed1;">Total GEX: ${totalGEX >= 0 ? '+' : ''}${totalGEX.toFixed(2)}B</div>
+            <div style="color: #ff4d4f;">Call GEX: +${callGEX.toFixed(2)}B</div>
+            <div style="color: #52c41a;">Put GEX: ${putGEX.toFixed(2)}B</div>
+          `;
+        },
+      },
+      legend: {
+        data: ['Call GEX', 'Put GEX', 'Total GEX'],
+        top: 10,
+        textStyle: {
+          fontSize: 11,
+        },
+      },
+      xAxis: {
+        type: 'category',
+        data: strikes,
+        name: 'Strike Price ($)',
+        nameLocation: 'middle',
+        nameGap: 30,
+        axisLabel: {
+          formatter: (value: string) => `$${value}`,
+          fontSize: 10,
+        },
+        axisLine: {
+          lineStyle: {
+            color: '#d9d9d9',
+          },
+        },
+      },
+      yAxis: {
+        type: 'value',
+        name: 'GEX ($B)',
+        nameTextStyle: {
+          fontSize: 11,
+        },
+        axisLabel: {
+          formatter: (value: number) => `${value >= 0 ? '+' : ''}${value}B`,
+          fontSize: 10,
+        },
+        splitLine: {
+          lineStyle: {
+            color: '#f0f0f0',
+            type: 'dashed',
+          },
+        },
+      },
+      series: [
+        {
+          name: 'Call GEX',
+          type: 'bar',
+          data: callGEXValues,
+          itemStyle: {
+            color: 'rgba(255, 77, 79, 0.6)',
+            borderRadius: [4, 4, 0, 0],
+          },
+          barWidth: '35%',
+          barGap: '0%',
+        },
+        {
+          name: 'Put GEX',
+          type: 'bar',
+          data: putGEXValues,
+          itemStyle: {
+            color: 'rgba(82, 196, 26, 0.6)',
+            borderRadius: [0, 0, 4, 4],
+          },
+          barWidth: '35%',
+        },
+        {
+          name: 'Total GEX',
+          type: 'line',
+          data: totalGEXValues,
+          smooth: true,
+          symbol: 'circle',
+          symbolSize: 6,
+          lineStyle: {
+            color: '#722ed1',
+            width: 2,
+          },
+          itemStyle: {
+            color: '#722ed1',
+          },
+          areaStyle: {
+            color: {
+              type: 'linear',
+              x: 0,
+              y: 0,
+              x2: 0,
+              y2: 1,
+              colorStops: [
+                { offset: 0, color: 'rgba(114, 46, 209, 0.3)' },
+                { offset: 1, color: 'rgba(114, 46, 209, 0.05)' },
+              ],
+            },
+          },
+        },
+        // 现价垂直虚线
+        ...(currentPriceIndex >= 0 ? [{
+          name: 'Current Price' as const,
+          type: 'line' as const,
+          markLine: {
+            symbol: 'none',
+            lineStyle: {
+              color: '#1890ff',
+              width: 2,
+              type: 'dashed',
+            },
+            label: {
+              formatter: '现价 $${c}',
+              position: 'end',
+              fontSize: 10,
+              color: '#1890ff',
+            },
+            data: [{ xAxis: currentPriceIndex }],
+          },
+        }] : []),
+        // Zero Gamma Level 线
+        {
+          name: 'Zero Gamma' as const,
+          type: 'line' as const,
+          markLine: {
+            symbol: 'none',
+            lineStyle: {
+              color: '#faad14',
+              width: 2,
+              type: 'dotted',
+            },
+            label: {
+              formatter: 'Zero Gamma',
+              position: 'start',
+              fontSize: 10,
+              color: '#faad14',
+            },
+            data: [{ yAxis: 0 }],
+          },
+        },
+      ],
+    };
+
+    chartInstance.current.setOption(option);
+
+    // 响应式
+    const handleResize = () => {
+      chartInstance.current?.resize();
+    };
+    window.addEventListener('resize', handleResize);
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [gexData, currentPrice, currentPriceIndex]);
+
+  return (
+    <Card
+      title={
+        <Space direction="vertical" size={0}>
+          <Title level={5} style={{ margin: 0 }}>Gamma Exposure (GEX)</Title>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            Gamma敞口分布与Zero Gamma Level
+          </Text>
+        </Space>
+      }
+      style={{ height: '100%' }}
+    >
+      {/* GEX 总览 */}
+      <div style={{ marginBottom: 16, padding: 12, background: '#f6ffed', borderRadius: 8 }}>
+        <Space direction="vertical" size={8} style={{ width: '100%' }}>
+          <Space align="center">
+            <Text strong style={{ fontSize: 16 }}>
+              Total GEX: {formatGEX(analysis.totalGEX)}
+            </Text>
+            <Tag color={statusLabel.color} style={{ margin: 0 }}>
+              {statusLabel.label}
+            </Tag>
+          </Space>
+          
+          <Space split={<Divider type="vertical" />}>
+            <Text style={{ fontSize: 12 }}>
+              Call GEX: <span style={{ color: '#ff4d4f' }}>+{formatGEX(analysis.callGEX)}</span>
+            </Text>
+            <Text style={{ fontSize: 12 }}>
+              Put GEX: <span style={{ color: '#52c41a' }}>{formatGEX(analysis.putGEX)}</span>
+            </Text>
+            <Text style={{ fontSize: 12 }}>
+              Zero Gamma: <span style={{ color: '#faad14' }}>${analysis.zeroGammaLevel.toFixed(2)}</span>
+            </Text>
+          </Space>
+
+          <Text type="secondary" style={{ fontSize: 11 }}>
+            {analysis.description}
+          </Text>
+        </Space>
+      </div>
+
+      {/* 图表 */}
+      <div ref={chartRef} style={{ height: 350, width: '100%' }} />
+
+      {/* 交易启示 */}
+      <div style={{ marginTop: 16 }}>
+        <Text strong style={{ fontSize: 12, color: '#666' }}>
+          交易启示：
+        </Text>
+        <List
+          size="small"
+          dataSource={analysis.tradingImplications.slice(0, 4)}
+          renderItem={(item) => (
+            <List.Item style={{ padding: '4px 0', fontSize: 11, color: '#666' }}>
+              • {item}
+            </List.Item>
+          )}
+        />
+      </div>
+    </Card>
+  );
+};
+
+export default GEXChart;
