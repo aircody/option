@@ -1,19 +1,21 @@
 import React, { useEffect, useRef, useMemo } from 'react';
 import * as echarts from 'echarts';
-import { Card, Typography, Tag, Space, Divider, List, Row, Col, Progress } from 'antd';
+import { Card, Typography, Tag, Space, List, Row, Col, Progress } from 'antd';
 import { calculatePCRData, analyzePCR, formatPCR, analyzePCRStatus } from '../utils/pcrCalculator';
-import type { PCRData } from '../utils/pcrCalculator';
 
 const { Text, Title } = Typography;
 
 interface PCRChartProps {
   oiData: { strike: number; callOI: number; putOI: number }[];
   currentPrice: number;
-  putCallRatio?: number;
 }
 
-// 辅助函数：获取PCR区间信息
-const getPCRZoneInfo = (pcr: number) => {
+interface PCRZoneInfo {
+  zone: string;
+  color: string;
+}
+
+const getPCRZoneInfo = (pcr: number): PCRZoneInfo => {
   const status = analyzePCRStatus(pcr);
   return {
     zone: status.statusLabel,
@@ -21,18 +23,16 @@ const getPCRZoneInfo = (pcr: number) => {
   };
 };
 
-const PCRChart: React.FC<PCRChartProps> = ({ oiData, currentPrice, putCallRatio }) => {
+const PCRChart: React.FC<PCRChartProps> = ({ oiData, currentPrice }) => {
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<echarts.ECharts | null>(null);
 
-  // 计算PCR数据
   const { pcrData, analysis } = useMemo(() => {
     const pcrData = calculatePCRData(oiData);
     const analysis = analyzePCR(oiData);
     return { pcrData, analysis };
   }, [oiData]);
 
-  // 计算OI占比
   const oiRatio = useMemo(() => {
     const totalOI = analysis.totalPutOI + analysis.totalCallOI;
     return {
@@ -41,7 +41,6 @@ const PCRChart: React.FC<PCRChartProps> = ({ oiData, currentPrice, putCallRatio 
     };
   }, [analysis]);
 
-  // 找到当前价格对应的PCR索引
   const currentPriceIndex = useMemo(() => {
     return pcrData.findIndex(d => d.strike >= currentPrice);
   }, [pcrData, currentPrice]);
@@ -49,7 +48,6 @@ const PCRChart: React.FC<PCRChartProps> = ({ oiData, currentPrice, putCallRatio 
   useEffect(() => {
     if (!chartRef.current) return;
 
-    // 初始化图表
     if (!chartInstance.current) {
       chartInstance.current = echarts.init(chartRef.current);
     }
@@ -57,6 +55,20 @@ const PCRChart: React.FC<PCRChartProps> = ({ oiData, currentPrice, putCallRatio 
     const strikes = pcrData.map(d => d.strike);
     const pcrOIValues = pcrData.map(d => d.pcrOI);
     const pcrVolumeValues = pcrData.map(d => d.pcrVolume);
+
+    const updateYAxisRange = (startPercent: number, endPercent: number) => {
+      const startIndex = Math.floor(startPercent / 100 * (pcrData.length - 1));
+      const endIndex = Math.ceil(endPercent / 100 * (pcrData.length - 1));
+      const visibleData = pcrData.slice(startIndex, endIndex + 1);
+      
+      if (visibleData.length === 0) return { min: 0, max: 3 };
+      
+      const visiblePCR = visibleData.map(d => Math.max(d.pcrOI, d.pcrVolume));
+      const maxPCR = Math.max(...visiblePCR);
+      return { min: 0, max: Math.max(3, maxPCR * 1.2) };
+    };
+
+    const initialRange = updateYAxisRange(0, 100);
 
     const option: echarts.EChartsOption = {
       backgroundColor: 'transparent',
@@ -83,10 +95,10 @@ const PCRChart: React.FC<PCRChartProps> = ({ oiData, currentPrice, putCallRatio 
           color: '#333'
         },
         extraCssText: 'box-shadow: 0 2px 8px rgba(0,0,0,0.15); border-radius: 4px; padding: 8px 12px;',
-        formatter: (params: any) => {
-          const strike = params[0].axisValue;
-          const pcrOI = params.find((p: any) => p.seriesName === 'PCR (OI)')?.value || 0;
-          const pcrVol = params.find((p: any) => p.seriesName === 'PCR (Volume)')?.value || 0;
+        formatter: (params: echarts.TooltipFormatterParams) => {
+          const strike = (params as echarts.TooltipFormatterParamsItem[])[0].axisValue;
+          const pcrOI = (params as echarts.TooltipFormatterParamsItem[]).find((p) => p.seriesName === 'PCR (OI)')?.value || 0;
+          const pcrVol = (params as echarts.TooltipFormatterParamsItem[]).find((p) => p.seriesName === 'PCR (Volume)')?.value || 0;
           const zone = getPCRZoneInfo(pcrOI);
           
           return `
@@ -167,8 +179,8 @@ const PCRChart: React.FC<PCRChartProps> = ({ oiData, currentPrice, putCallRatio 
             type: 'dashed',
           },
         },
-        min: 0,
-        max: Math.max(3, Math.max(...pcrOIValues) * 1.2),
+        min: initialRange.min,
+        max: initialRange.max,
       },
       series: [
         {
@@ -215,7 +227,6 @@ const PCRChart: React.FC<PCRChartProps> = ({ oiData, currentPrice, putCallRatio 
             color: '#52c41a',
           },
         },
-        // 极端悲观线 (1.5)
         {
           name: '极端悲观线',
           type: 'line',
@@ -235,7 +246,6 @@ const PCRChart: React.FC<PCRChartProps> = ({ oiData, currentPrice, putCallRatio 
             data: [{ yAxis: 1.5 }],
           },
         },
-        // 中性区间上线 (1.2)
         {
           name: '中性区间',
           type: 'line',
@@ -255,7 +265,6 @@ const PCRChart: React.FC<PCRChartProps> = ({ oiData, currentPrice, putCallRatio 
             data: [{ yAxis: 1.2 }],
           },
         },
-        // 中性区间下线 (1.0)
         {
           name: '中性区间',
           type: 'line',
@@ -275,7 +284,6 @@ const PCRChart: React.FC<PCRChartProps> = ({ oiData, currentPrice, putCallRatio 
             data: [{ yAxis: 1.0 }],
           },
         },
-        // 极端乐观线 (0.8)
         {
           name: '极端悲观线',
           type: 'line',
@@ -295,7 +303,6 @@ const PCRChart: React.FC<PCRChartProps> = ({ oiData, currentPrice, putCallRatio 
             data: [{ yAxis: 0.8 }],
           },
         },
-        // 现价垂直虚线
         ...(currentPriceIndex >= 0 ? [{
           name: 'Current Price' as const,
           type: 'line' as const,
@@ -320,7 +327,15 @@ const PCRChart: React.FC<PCRChartProps> = ({ oiData, currentPrice, putCallRatio 
 
     chartInstance.current.setOption(option);
 
-    // 响应式
+    chartInstance.current.on('dataZoom', (params: any) => {
+      const start = params.batch ? params.batch[0].start : params.start;
+      const end = params.batch ? params.batch[0].end : params.end;
+      const newRange = updateYAxisRange(start, end);
+      chartInstance.current?.setOption({
+        yAxis: { min: newRange.min, max: newRange.max }
+      });
+    });
+
     const handleResize = () => {
       chartInstance.current?.resize();
     };
@@ -343,7 +358,6 @@ const PCRChart: React.FC<PCRChartProps> = ({ oiData, currentPrice, putCallRatio 
       }
       style={{ height: '100%' }}
     >
-      {/* PCR 总览 */}
       <div style={{ marginBottom: 16, padding: 12, background: '#f6ffed', borderRadius: 8 }}>
         <Space direction="vertical" size={8} style={{ width: '100%' }}>
           <Row align="middle" justify="space-between">
@@ -364,7 +378,6 @@ const PCRChart: React.FC<PCRChartProps> = ({ oiData, currentPrice, putCallRatio 
             </Col>
           </Row>
           
-          {/* OI 分布 */}
           <div style={{ marginTop: 8 }}>
             <Row justify="space-between" style={{ marginBottom: 4 }}>
               <Col>
@@ -401,7 +414,6 @@ const PCRChart: React.FC<PCRChartProps> = ({ oiData, currentPrice, putCallRatio 
         </Space>
       </div>
 
-      {/* PCR 区间参考 */}
       <div style={{ marginBottom: 16, padding: 8, background: '#f5f5f5', borderRadius: 4 }}>
         <Text strong style={{ fontSize: 11, color: '#666', display: 'block', marginBottom: 8 }}>
           PCR 区间参考:
@@ -431,10 +443,8 @@ const PCRChart: React.FC<PCRChartProps> = ({ oiData, currentPrice, putCallRatio 
         </Row>
       </div>
 
-      {/* 图表 */}
       <div ref={chartRef} style={{ height: 300, width: '100%' }} />
 
-      {/* 交易启示 */}
       <div style={{ marginTop: 16 }}>
         <Text strong style={{ fontSize: 12, color: '#666' }}>
           交易启示：
@@ -450,7 +460,6 @@ const PCRChart: React.FC<PCRChartProps> = ({ oiData, currentPrice, putCallRatio 
         />
       </div>
 
-      {/* 风险提示 */}
       {analysis.riskWarnings.length > 0 && (
         <div style={{ marginTop: 12, padding: 8, background: '#fff2f0', borderRadius: 4 }}>
           <Text strong style={{ fontSize: 11, color: '#ff4d4f' }}>

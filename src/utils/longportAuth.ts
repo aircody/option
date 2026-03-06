@@ -87,7 +87,7 @@ export async function longportRequest<T>(
   accessToken: string,
   method: string,
   uri: string,
-  body?: any
+  body?: unknown
 ): Promise<T> {
   const bodyString = body ? JSON.stringify(body) : undefined;
   

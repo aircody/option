@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Button, Input, Tag, Space, Tooltip, message, Popover, List, Empty } from 'antd';
 import { SearchOutlined, StarOutlined, StarFilled, DeleteOutlined } from '@ant-design/icons';
 
@@ -19,19 +19,15 @@ const SymbolSelector: React.FC<SymbolSelectorProps> = ({
   loading = false,
 }) => {
   const [customSymbol, setCustomSymbol] = useState('');
-  const [savedSymbols, setSavedSymbols] = useState<string[]>([]);
-  const [popoverOpen, setPopoverOpen] = useState(false);
-
-  useEffect(() => {
+  const [savedSymbols, setSavedSymbols] = useState<string[]>(() => {
     try {
       const stored = localStorage.getItem(SAVED_SYMBOLS_KEY);
-      if (stored) {
-        setSavedSymbols(JSON.parse(stored));
-      }
-    } catch (error) {
-      console.error('Failed to load saved symbols:', error);
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
     }
-  }, []);
+  });
+  const [popoverOpen, setPopoverOpen] = useState(false);
 
   const saveSymbolsToStorage = (symbols: string[]) => {
     try {

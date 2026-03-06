@@ -1,27 +1,33 @@
 import React, { useEffect, useRef, useMemo } from 'react';
 import * as echarts from 'echarts';
-import { Card, Typography, Tag, Space, Divider, List, Row, Col, Statistic } from 'antd';
+import { Card, Typography, Tag, Space, List, Row, Col, Statistic } from 'antd';
 import { getSkewTradingImplications, analyzeSkewStatus } from '../utils/skewCalculator';
 
 const { Text, Title } = Typography;
 
+interface OptionChainItem {
+  strike: number;
+  callIV?: number;
+  putIV?: number;
+}
+
+interface IVData {
+  skew25Delta?: number;
+  put25IV?: number;
+  call25IV?: number;
+}
+
 interface SkewChartProps {
-  oiData: { strike: number; callOI: number; putOI: number }[];
   currentPrice: number;
   atmIV: number;
-  pcr?: number;
-  gammaExposure?: number;
-  ivData?: any;
-  optionChain?: any[];
+  ivData?: IVData;
+  optionChain?: OptionChainItem[];
   pcrStatus?: string;
 }
 
 const SkewChart: React.FC<SkewChartProps> = ({
-  oiData,
   currentPrice,
   atmIV,
-  pcr,
-  gammaExposure,
   ivData,
   optionChain,
   pcrStatus
@@ -40,8 +46,8 @@ const SkewChart: React.FC<SkewChartProps> = ({
   const description = statusInfo.description;
   
   const tradingImplications = useMemo(() => {
-    return getSkewTradingImplications(status, skewPercent, pcrStatus);
-  }, [status, skewPercent, pcrStatus]);
+    return getSkewTradingImplications(status, pcrStatus);
+  }, [status, pcrStatus]);
   
   const riskWarnings = useMemo(() => {
     const warnings: string[] = [];
@@ -128,10 +134,10 @@ const SkewChart: React.FC<SkewChartProps> = ({
           color: '#333'
         },
         extraCssText: 'box-shadow: 0 2px 8px rgba(0,0,0,0.15); border-radius: 4px; padding: 8px 12px;',
-        formatter: (params: any) => {
-          const strike = params[0].axisValue;
-          const callSkew = params.find((p: any) => p.seriesName === 'Call Skew')?.value || 0;
-          const putSkew = params.find((p: any) => p.seriesName === 'Put Skew')?.value || 0;
+        formatter: (params: echarts.TooltipFormatterParams) => {
+          const strike = (params as echarts.TooltipFormatterParamsItem[])[0].axisValue;
+          const callSkew = (params as echarts.TooltipFormatterParamsItem[]).find((p) => p.seriesName === 'Call Skew')?.value || 0;
+          const putSkew = (params as echarts.TooltipFormatterParamsItem[]).find((p) => p.seriesName === 'Put Skew')?.value || 0;
 
           return `
             <div style="font-weight: bold; margin-bottom: 8px; border-bottom: 1px solid #f0f0f0; padding-bottom: 4px;">Strike: $${strike}</div>

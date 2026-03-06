@@ -13,7 +13,6 @@ import SkewChart from '../components/SkewChart';
 import StrategyGuide from '../components/StrategyGuide';
 import Settings from './Settings';
 import { fetchOptionAnalysis, fetchExpiryDates } from '../services/optionService';
-import { analyzePCRStatus } from '../utils/pcrCalculator';
 import type { OptionAnalysisData, ExpiryDate } from '../types';
 
 const { Content, Sider } = Layout;

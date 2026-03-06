@@ -132,7 +132,15 @@ export function calculateMaxPain(oiData: OIData[]): {
  * @param apiData LongPort API 返回的期权数据
  * @returns 转换后的 OIData 数组
  */
-export function convertApiDataToOIData(apiData: any[]): OIData[] {
+interface ApiDataItem {
+  strike_price?: number;
+  strike?: number;
+  open_interest?: number;
+  oi?: number;
+  direction?: string;
+}
+
+export function convertApiDataToOIData(apiData: ApiDataItem[]): OIData[] {
   if (!apiData || !Array.isArray(apiData)) {
     return [];
   }

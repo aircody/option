@@ -3,37 +3,25 @@ import * as echarts from 'echarts';
 import { Card } from 'antd';
 import type { OIData } from '../types';
 import { identifyOIWalls, getStrongestSupportResistance, formatOI } from '../utils/oiWallCalculator';
-import { filterStrikesByPriceRange, estimateAverageIV } from '../utils/priceRangeCalculator';
 
 interface OIWallChartProps {
   data: OIData[];
-  maxPain: number;
   currentPrice?: number;
   daysToExpiry?: number;
 }
 
 const OIWallChart: React.FC<OIWallChartProps> = ({ 
   data, 
-  maxPain, 
   currentPrice,
   daysToExpiry = 30 
 }) => {
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<echarts.ECharts | null>(null);
 
-  const averageIV = useMemo(() => {
-    return estimateAverageIV(data);
-  }, [data]);
-
-  const filteredData = useMemo(() => {
-    if (!currentPrice || data.length === 0) return data;
-    return filterStrikesByPriceRange(data, currentPrice, averageIV, daysToExpiry);
-  }, [data, currentPrice, averageIV, daysToExpiry]);
-
   const oiWallResults = useMemo(() => {
-    if (!currentPrice || filteredData.length === 0) return [];
-    return identifyOIWalls(filteredData, currentPrice);
-  }, [filteredData, currentPrice]);
+    if (!currentPrice || data.length === 0) return [];
+    return identifyOIWalls(data, currentPrice);
+  }, [data, currentPrice]);
 
   const { strongestSupport, strongestResistance } = useMemo(() => {
     return getStrongestSupportResistance(oiWallResults);
@@ -46,9 +34,9 @@ const OIWallChart: React.FC<OIWallChartProps> = ({
       chartInstance.current = echarts.init(chartRef.current);
     }
 
-    const strikes = filteredData.map((d) => d.strike);
-    const callOIs = filteredData.map((d) => d.callOI);
-    const putOIs = filteredData.map((d) => d.putOI);
+    const strikes = data.map((d) => d.strike);
+    const callOIs = data.map((d) => d.callOI);
+    const putOIs = data.map((d) => d.putOI);
 
     let currentPriceIndex = -1;
     if (currentPrice && strikes.length > 0) {
@@ -62,8 +50,6 @@ const OIWallChart: React.FC<OIWallChartProps> = ({
       });
     }
 
-    let maxPainIndex = -1;
-
     let supportIndex = -1;
     if (strongestSupport && strikes.length > 0) {
       supportIndex = strikes.findIndex(s => parseInt(s.toString()) === strongestSupport.strike);
@@ -72,6 +58,18 @@ const OIWallChart: React.FC<OIWallChartProps> = ({
     let resistanceIndex = -1;
     if (strongestResistance && strikes.length > 0) {
       resistanceIndex = strikes.findIndex(s => parseInt(s.toString()) === strongestResistance.strike);
+    }
+
+    let dataZoomStart = 0;
+    let dataZoomEnd = 100;
+    if (supportIndex >= 0 && resistanceIndex >= 0 && strikes.length > 1) {
+      const minIndex = Math.min(supportIndex, resistanceIndex);
+      const maxIndex = Math.max(supportIndex, resistanceIndex);
+      const padding = Math.floor((maxIndex - minIndex) * 0.2);
+      const finalMinIndex = Math.max(0, minIndex - padding);
+      const finalMaxIndex = Math.min(strikes.length - 1, maxIndex + padding);
+      dataZoomStart = (finalMinIndex / (strikes.length - 1)) * 100;
+      dataZoomEnd = (finalMaxIndex / (strikes.length - 1)) * 100;
     }
 
     const callWallIndices: number[] = [];
@@ -95,9 +93,9 @@ const OIWallChart: React.FC<OIWallChartProps> = ({
           lineHeight: 1.6,
         },
         formatter: (params: any) => {
-          const strike = params[0].axisValue;
-          const callOI = params.find((p: any) => p.seriesName === 'Call OI (阻力)')?.value || 0;
-          const putOI = params.find((p: any) => p.seriesName === 'Put OI (支撑)')?.value || 0;
+          const strike = (params as any[])[0].axisValue;
+          const callOI = (params as any[]).find((p) => p.seriesName === 'Call OI (阻力)')?.value || 0;
+          const putOI = (params as any[]).find((p) => p.seriesName === 'Put OI (支撑)')?.value || 0;
           
           const oiResult = oiWallResults.find(r => r.strike === parseInt(strike));
           let wallInfo = '';
@@ -139,15 +137,15 @@ const OIWallChart: React.FC<OIWallChartProps> = ({
         {
           type: 'inside',
           xAxisIndex: 0,
-          start: 0,
-          end: 100,
+          start: dataZoomStart,
+          end: dataZoomEnd,
           zoomLock: false,
         },
         {
           type: 'slider',
           xAxisIndex: 0,
-          start: 0,
-          end: 100,
+          start: dataZoomStart,
+          end: dataZoomEnd,
           height: 20,
           bottom: 10,
           handleSize: '80%',
@@ -375,7 +373,7 @@ const OIWallChart: React.FC<OIWallChartProps> = ({
         <div>
           <div>OI Wall - 持仓墙 (支撑/阻力)</div>
           {strongestSupport && strongestResistance && (
-            <div style={{ fontSize: '12px', fontWeight: 'normal', marginTop: '4px', color: '#666' }}>
+            <div style={{ fontSize: '12px', fontWeight: 'normal', marginTop: '4px', color: '#666' }>
               <span style={{ color: '#52c41a', fontWeight: 500 }}>强支撑: ${strongestSupport.strike} ({formatOI(strongestSupport.putOI)})</span>
               <span style={{ margin: '0 12px' }}>|</span>
               <span style={{ color: '#ff4d4f', fontWeight: 500 }}>强阻力: ${strongestResistance.strike} ({formatOI(strongestResistance.callOI)})</span>

@@ -1,8 +1,8 @@
 import React, { useMemo } from 'react';
 import { Card, Typography, Row, Col } from 'antd';
 import type { OptionAnalysisData } from '../types';
-import { calculateGEX, analyzeGEX, formatGEX } from '../utils/gexCalculator';
-import { calculatePCRData, analyzePCR, formatPCR } from '../utils/pcrCalculator';
+import { analyzeGEX, formatGEX } from '../utils/gexCalculator';
+import { analyzePCR, formatPCR } from '../utils/pcrCalculator';
 
 const { Text } = Typography;
 

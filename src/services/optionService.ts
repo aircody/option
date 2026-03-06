@@ -1,18 +1,13 @@
-import type { OptionAnalysisData, ExpiryDate, OIData, MaxPainData } from '../types';
+import type { OptionAnalysisData, ExpiryDate, OIData } from '../types';
 import { getMockOptionData } from '../mock/optionData';
 import { getApiConfig } from './configService';
 import { generateExpiryDateData, type ExpiryDateInfo } from '../utils/dateUtils';
 import { calculateMaxPain } from '../utils/maxPainCalculator';
-import { analyzeGEX, formatGEX } from '../utils/gexCalculator';
-import { analyzePCR, formatPCR } from '../utils/pcrCalculator';
-import { analyzeIV, formatIV, getIVTradingImplications, analyzeVRPStatus } from '../utils/ivCalculator';
+import { analyzeGEX } from '../utils/gexCalculator';
+import { analyzePCR } from '../utils/pcrCalculator';
+import { getIVTradingImplications, analyzeVRPStatus } from '../utils/ivCalculator';
+import { envConfig } from '../config/env';
 
-// LongPort API 基础路径
-const LONGPORT_API_BASE = '/v1';
-
-/**
- * API 返回的期权数据结构
- */
 interface ApiOptionData {
   strike: number;
   callOI: number;
@@ -48,11 +43,102 @@ interface ApiChainResponse {
   options: ApiOptionData[];
 }
 
-/**
- * 获取期权分析数据
- * @param symbol 股票代码
- * @param expiryDate 到期日（可选）
- */
+const buildApiUrl = (path: string, params: Record<string, string> = {}) => {
+  const url = new URL(`${envConfig.PYTHON_BACKEND_URL}${path}`);
+  Object.entries(params).forEach(([key, value]) => {
+    url.searchParams.set(key, value);
+  });
+  return url.toString();
+};
+
+const getAuthHeaders = () => {
+  const config = getApiConfig();
+  return {
+    'X-Api-Key': config.appKey,
+    'X-Api-Secret': config.appSecret,
+    'Authorization': config.accessToken,
+  };
+};
+
+const handleApiResponse = async (response: Response) => {
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.message || `API请求失败: ${response.status}`);
+  }
+  return response.json();
+};
+
+const formatShortDate = (date: Date): string => {
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${month}/${day}`;
+};
+
+const isThisFriday = (date: Date, today: Date): boolean => {
+  const dayOfWeek = date.getDay();
+  if (dayOfWeek !== 5) return false;
+  
+  const diffDays = Math.floor((date.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  return diffDays >= 0 && diffDays < 7;
+};
+
+const isNextFriday = (date: Date, today: Date): boolean => {
+  const dayOfWeek = date.getDay();
+  if (dayOfWeek !== 5) return false;
+  
+  const diffDays = Math.floor((date.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  return diffDays >= 7 && diffDays < 14;
+};
+
+const isMonthlyOPEX = (date: Date): boolean => {
+  const dayOfWeek = date.getDay();
+  if (dayOfWeek !== 5) return false;
+  
+  const weekOfMonth = Math.ceil(date.getDate() / 7);
+  return weekOfMonth === 3;
+};
+
+const getSpecialType = (label: string): ExpiryDateInfo['specialType'] => {
+  switch (label) {
+    case '今日ODTE': return 'today';
+    case '明日': return 'tomorrow';
+    case '本周五': return 'thisFriday';
+    case '下周五': return 'nextFriday';
+    case '月度OPEX': return 'opex';
+    default: return 'weekly';
+  }
+};
+
+const getExpiryLabel = (date: Date, daysToExpiry: number, today: Date): string => {
+  const dayOfWeek = date.getDay();
+  const isFriday = dayOfWeek === 5;
+  
+  if (daysToExpiry === 0) return '今日ODTE';
+  if (daysToExpiry === 1) return '明日';
+  if (isMonthlyOPEX(date)) return '月度OPEX';
+  
+  if (isFriday) {
+    if (daysToExpiry >= 2 && daysToExpiry < 7) return '本周五';
+    if (daysToExpiry >= 7 && daysToExpiry < 14) return '下周五';
+    return formatShortDate(date);
+  }
+  
+  return formatShortDate(date);
+};
+
+const getCurrentEasternTime = (): string => {
+  const now = new Date();
+  return now.toLocaleString('zh-CN', {
+    timeZone: envConfig.TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+};
+
 export const fetchOptionAnalysis = async (
   symbol: string,
   expiryDate?: string
@@ -60,42 +146,31 @@ export const fetchOptionAnalysis = async (
   const config = getApiConfig();
   
   if (config.useMock) {
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await new Promise((resolve) => setTimeout(resolve, envConfig.MOCK_DELAY_MS));
     return getMockOptionData(symbol, expiryDate);
   }
 
-  // 使用真实 API
   try {
-    // 获取期权链数据（根据到期日）
     const chainResult = await fetchOptionChain(symbol, expiryDate);
-    
-    // 计算各项指标
-    const analysisData = calculateOptionMetrics(
+    return calculateOptionMetrics(
       chainResult.options,
       chainResult.underlying,
       chainResult.summary,
       symbol,
       expiryDate
     );
-    
-    return analysisData;
   } catch (error) {
     console.error('Failed to fetch option analysis:', error);
     throw new Error('获取期权数据失败: ' + (error as Error).message);
   }
 };
 
-/**
- * 获取指定股票的期权到期日列表
- */
 export const fetchExpiryDates = async (symbol: string): Promise<ExpiryDate[]> => {
   const config = getApiConfig();
   
   if (config.useMock) {
     await new Promise((resolve) => setTimeout(resolve, 200));
-    
     const expiryDateData = generateExpiryDateData(symbol, new Date(), 45);
-    
     return expiryDateData.map(item => ({
       label: item.label,
       date: item.date,
@@ -103,36 +178,20 @@ export const fetchExpiryDates = async (symbol: string): Promise<ExpiryDate[]> =>
     }));
   }
 
-  // 使用 Python 后端获取到期日
   try {
-    const response = await fetch(`http://localhost:5000/v1/option/expiry?symbol=${symbol}`, {
+    const response = await fetch(buildApiUrl('/v1/option/expiry', { symbol }), {
       method: 'GET',
-      headers: {
-        'X-Api-Key': config.appKey,
-        'X-Api-Secret': config.appSecret,
-        'Authorization': config.accessToken,
-      },
+      headers: getAuthHeaders(),
     });
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.message || `API请求失败: ${response.status}`);
-    }
-
-    const data = await response.json();
+    const data = await handleApiResponse(response);
     const expiryDatesList: string[] = data.expiry_dates || [];
+    const today = new Date();
 
-    const expiryDates: ExpiryDate[] = expiryDatesList.map((dateStr: string) => {
+    return expiryDatesList.map((dateStr: string) => {
       const date = new Date(dateStr);
-      const today = new Date();
       const daysToExpiry = Math.ceil((date.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-
-      let label = formatShortDate(date);
-      if (daysToExpiry === 0) label = '今日ODTE';
-      else if (daysToExpiry === 1) label = '明日';
-      else if (isThisFriday(date, today)) label = '本周五';
-      else if (isNextFriday(date, today)) label = '下周五';
-      else if (isMonthlyOPEX(date)) label = '月度OPEX';
+      const label = getExpiryLabel(date, daysToExpiry, today);
 
       return {
         label,
@@ -140,18 +199,12 @@ export const fetchExpiryDates = async (symbol: string): Promise<ExpiryDate[]> =>
         daysToExpiry,
       };
     });
-
-    return expiryDates;
   } catch (error) {
     console.error('Failed to fetch expiry dates:', error);
     throw new Error('获取到期日失败: ' + (error as Error).message);
   }
 };
 
-/**
- * 获取期权链数据
- * 使用 Python 后端服务 - 重构版
- */
 export const fetchOptionChain = async (
   symbol: string,
   expiryDate?: string
@@ -176,36 +229,21 @@ export const fetchOptionChain = async (
     };
   }
 
-  const uri = expiryDate
-    ? `http://localhost:5000/v1/option/chain?symbol=${symbol}&expiry_date=${expiryDate}`
-    : `http://localhost:5000/v1/option/chain?symbol=${symbol}`;
+  const params: Record<string, string> = { symbol };
+  if (expiryDate) params.expiry_date = expiryDate;
 
-  const response = await fetch(uri, {
+  const response = await fetch(buildApiUrl('/v1/option/chain', params), {
     method: 'GET',
-    headers: {
-      'X-Api-Key': config.appKey,
-      'X-Api-Secret': config.appSecret,
-      'Authorization': config.accessToken,
-    },
+    headers: getAuthHeaders(),
   });
 
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.message || `API请求失败: ${response.status}`);
-  }
-
-  const data: ApiChainResponse = await response.json();
+  const data: ApiChainResponse = await handleApiResponse(response);
   
   console.log('[fetchOptionChain] API 返回数据:', {
     optionsCount: data.options?.length || 0,
     underlying: data.underlying,
     summary: data.summary,
   });
-  
-  // 打印前3个期权数据用于调试
-  if (data.options && data.options.length > 0) {
-    console.log('[fetchOptionChain] 前3个期权数据:', data.options.slice(0, 3));
-  }
 
   return {
     options: data.options || [],
@@ -220,9 +258,6 @@ export const fetchOptionChain = async (
   };
 };
 
-/**
- * 获取详细的到期日信息
- */
 export const fetchExpiryDatesWithInfo = async (symbol: string): Promise<ExpiryDateInfo[]> => {
   const config = getApiConfig();
   
@@ -242,10 +277,6 @@ export const fetchExpiryDatesWithInfo = async (symbol: string): Promise<ExpiryDa
   }));
 };
 
-/**
- * 计算期权指标
- * 根据从 Python 后端返回的期权链数据计算各项指标 - 重构版
- */
 function calculateOptionMetrics(
   optionChain: ApiOptionData[],
   underlying: ApiUnderlyingData,
@@ -253,7 +284,6 @@ function calculateOptionMetrics(
   symbol: string,
   expiryDate?: string
 ): OptionAnalysisData {
-  // 如果没有数据，返回 Mock 数据
   if (!optionChain || optionChain.length === 0) {
     console.log('[calculateOptionMetrics] No option chain data, using mock data');
     return getMockOptionData(symbol, expiryDate);
@@ -261,23 +291,15 @@ function calculateOptionMetrics(
 
   console.log('[calculateOptionMetrics] Processing', optionChain.length, 'option chain items');
 
-  // 转换期权链数据为 OI 数据格式
   const oiData: OIData[] = optionChain.map(item => ({
     strike: item.strike || 0,
     callOI: item.callOI || 0,
     putOI: item.putOI || 0,
   }));
   
-  console.log('[calculateOptionMetrics] OI数据 (前5个):', oiData.slice(0, 5));
-
-  // 计算 Max Pain
   const { maxPain, maxPainCurve } = calculateMaxPain(oiData);
   console.log('[calculateOptionMetrics] Max Pain计算结果:', { maxPain, maxPainCurveCount: maxPainCurve.length });
-  if (maxPainCurve.length > 0) {
-    console.log('[calculateOptionMetrics] Max Pain曲线 (前5个):', maxPainCurve.slice(0, 5));
-  }
 
-  // 获取当前价格 - 优先使用从 API 获取的标的资产现价
   let lastPrice = underlying.last_price;
   if (!lastPrice || lastPrice <= 0) {
     lastPrice = maxPain || 500;
@@ -291,7 +313,6 @@ function calculateOptionMetrics(
     console.log('[calculateOptionMetrics] 使用从 API 获取的标的资产现价:', lastPrice);
   }
 
-  // 计算价格涨跌幅
   let priceChange = 0;
   let priceChangePercent = 0;
   if (underlying.last_price && underlying.prev_close && underlying.prev_close > 0) {
@@ -299,26 +320,10 @@ function calculateOptionMetrics(
     priceChangePercent = (priceChange / underlying.prev_close) * 100;
   }
 
-  // 计算 GEX (Gamma Exposure)
   const gexResult = analyzeGEX(oiData, lastPrice);
-
-  // 计算 PCR (Put/Call Ratio)
   const pcrResult = analyzePCR(oiData);
-
-  // 计算 IV 相关指标 - 使用 API 提供的 IV 和 HV 数据
   const ivResult = analyzeIVWithApiData(optionChain, lastPrice, pcrResult.status, summary.avg_historical_volatility);
-
-  // 生成当前时间（美东时间）
-  const now = new Date();
-  const lastUpdated = now.toLocaleString('zh-CN', {
-    timeZone: 'America/New_York',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
+  const lastUpdated = getCurrentEasternTime();
 
   return {
     symbol: symbol.toUpperCase(),
@@ -342,13 +347,10 @@ function calculateOptionMetrics(
   };
 }
 
-/**
- * 使用 API 数据计算 IV 相关指标
- */
 function analyzeIVWithApiData(
   optionChain: ApiOptionData[],
   lastPrice: number,
-  pcrStatus: any,
+  pcrStatus: unknown,
   avgHV: number
 ) {
   console.log('[analyzeIVWithApiData] 开始分析', {
@@ -411,14 +413,14 @@ function analyzeIVWithApiData(
       }
     }
     
-    const put25Target = lastPrice * 0.93;
+    const put25Target = lastPrice * envConfig.IV_PUT_TARGET_FACTOR;
     const put25Distance = Math.abs(strike - put25Target) / lastPrice;
     if (put25Distance < minDistancePut25 && opt.putIV > 0) {
       minDistancePut25 = put25Distance;
       put25IV = opt.putIV;
     }
     
-    const call25Target = lastPrice * 1.07;
+    const call25Target = lastPrice * envConfig.IV_CALL_TARGET_FACTOR;
     const call25Distance = Math.abs(strike - call25Target) / lastPrice;
     if (call25Distance < minDistanceCall25 && opt.callIV > 0) {
       minDistanceCall25 = call25Distance;
@@ -451,28 +453,9 @@ function analyzeIVWithApiData(
   }
 
   const hv = avgHV > 0 ? avgHV : (atmIV > 0 ? atmIV * 0.75 : 0.15);
-  
   const vrp = atmIV - hv;
   const vrpPercent = hv > 0 ? (vrp / hv) * 100 : 0;
-  
   const skew25Delta = put25IV > 0 && call25IV > 0 ? put25IV - call25IV : 0;
-  
-  let status: 'low' | 'normal' | 'high' | 'extreme' = 'normal';
-  let statusLabel = '正常溢价';
-  
-  if (vrpPercent < 5) {
-    status = 'low';
-    statusLabel = '低溢价';
-  } else if (vrpPercent < 15) {
-    status = 'normal';
-    statusLabel = '正常溢价';
-  } else if (vrpPercent < 30) {
-    status = 'high';
-    statusLabel = '高溢价';
-  } else {
-    status = 'extreme';
-    statusLabel = '极端溢价';
-  }
 
   console.log('[analyzeIVWithApiData] 分析结果:', {
     atmIV,
@@ -491,7 +474,7 @@ function analyzeIVWithApiData(
   if (vrpStatusInfo.status === 'extreme') {
     riskWarnings.push('极端高溢价，波动率可能进一步上行');
   }
-  if (vrpPercent > 20) {
+  if (vrpPercent > envConfig.VRP_WARNING_THRESHOLD) {
     riskWarnings.push('VRP过高，注意波动率回归风险');
   }
 
@@ -513,76 +496,16 @@ function analyzeIVWithApiData(
   };
 }
 
-/**
- * 格式化短日期
- */
-function formatShortDate(date: Date): string {
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${month}/${day}`;
-}
-
-/**
- * 判断是否为本周五
- */
-function isThisFriday(date: Date, today: Date): boolean {
-  const dayOfWeek = date.getDay();
-  if (dayOfWeek !== 5) return false;
-  
-  const diffDays = Math.floor((date.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-  return diffDays >= 0 && diffDays < 7;
-}
-
-/**
- * 判断是否为下周五
- */
-function isNextFriday(date: Date, today: Date): boolean {
-  const dayOfWeek = date.getDay();
-  if (dayOfWeek !== 5) return false;
-  
-  const diffDays = Math.floor((date.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-  return diffDays >= 7 && diffDays < 14;
-}
-
-/**
- * 判断是否为月度OPEX
- */
-function isMonthlyOPEX(date: Date): boolean {
-  const dayOfWeek = date.getDay();
-  if (dayOfWeek !== 5) return false;
-  
-  const weekOfMonth = Math.ceil(date.getDate() / 7);
-  return weekOfMonth === 3;
-}
-
-/**
- * 获取特殊类型
- */
-function getSpecialType(label: string): ExpiryDateInfo['specialType'] {
-  switch (label) {
-    case '今日ODTE': return 'today';
-    case '明日': return 'tomorrow';
-    case '本周五': return 'thisFriday';
-    case '下周五': return 'nextFriday';
-    case '月度OPEX': return 'opex';
-    default: return 'weekly';
-  }
-}
-
-/**
- * 测试 API 连接
- * 使用 Python 后端服务
- */
 export const testApiConnection = async (): Promise<boolean> => {
   const config = getApiConfig();
 
   if (config.useMock) {
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await new Promise((resolve) => setTimeout(resolve, envConfig.MOCK_DELAY_MS));
     return true;
   }
 
   try {
-    const response = await fetch('http://localhost:5000/test-connection', {
+    const response = await fetch(buildApiUrl('/test-connection'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -594,7 +517,7 @@ export const testApiConnection = async (): Promise<boolean> => {
       }),
     });
 
-    const data = await response.json();
+    const data = await handleApiResponse(response);
     console.log('[testApiConnection] Response:', data);
 
     return data.success === true;
@@ -603,4 +526,3 @@ export const testApiConnection = async (): Promise<boolean> => {
     return false;
   }
 };
-

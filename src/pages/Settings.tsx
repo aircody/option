@@ -39,7 +39,7 @@ const Settings: React.FC = () => {
       saveApiConfig(mergedConfig);
       message.success('配置已保存');
       setTestResult(null);
-    } catch (error) {
+    } catch {
       message.error('保存失败');
     } finally {
       setLoading(false);

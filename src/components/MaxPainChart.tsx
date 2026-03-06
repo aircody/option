@@ -1,9 +1,8 @@
-import React, { useEffect, useRef, useMemo } from 'react';
+import React, { useEffect, useRef } from 'react';
 import * as echarts from 'echarts';
 import { Card } from 'antd';
 import type { MaxPainData, OIData } from '../types';
 import { formatDollarAmount } from '../utils/maxPainCalculator';
-import { filterStrikesByPriceRange, estimateAverageIV } from '../utils/priceRangeCalculator';
 
 interface MaxPainChartProps {
   data: MaxPainData[];
@@ -23,30 +22,7 @@ const MaxPainChart: React.FC<MaxPainChartProps> = ({
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<echarts.ECharts | null>(null);
 
-  // 估算平均 IV
-  const averageIV = useMemo(() => {
-    if (oiData) {
-      return estimateAverageIV(oiData);
-    }
-    return 0.3;
-  }, [oiData]);
 
-  // 过滤 Max Pain 数据，只保留现价附近合理范围的
-  const filteredData = useMemo(() => {
-    if (!currentPrice || data.length === 0 || !oiData) {
-      return data;
-    }
-    
-    // 先过滤 OIData 来获取价格范围
-    const filteredOI = filterStrikesByPriceRange(oiData, currentPrice, averageIV, daysToExpiry);
-    const minStrike = Math.min(...filteredOI.map(d => d.strike));
-    const maxStrike = Math.max(...filteredOI.map(d => d.strike));
-    
-    // 然后用这个范围来过滤 Max Pain 数据
-    return data.filter(item => 
-      item.strike >= minStrike && item.strike <= maxStrike
-    );
-  }, [data, currentPrice, averageIV, daysToExpiry, oiData]);
 
   useEffect(() => {
     if (!chartRef.current) return;
@@ -55,12 +31,12 @@ const MaxPainChart: React.FC<MaxPainChartProps> = ({
       chartInstance.current = echarts.init(chartRef.current);
     }
 
-    const strikes = filteredData.map((d) => d.strike);
-    const pains = filteredData.map((d) => d.totalPain);
+    const strikes = data.map((d) => d.strike);
+    const pains = data.map((d) => d.totalPain);
 
-    // 找到 Max Pain 点（在过滤后的数据中）
-    const maxPainIndex = filteredData.findIndex((d) => d.strike === maxPainStrike);
-    const maxPainValue = maxPainIndex >= 0 ? filteredData[maxPainIndex].totalPain : 0;
+    // 找到 Max Pain 点
+    const maxPainIndex = data.findIndex((d) => d.strike === maxPainStrike);
+    const maxPainValue = maxPainIndex >= 0 ? data[maxPainIndex].totalPain : 0;
 
     // 散点数据 - 只显示 Max Pain 点
     const scatterData = maxPainIndex >= 0
@@ -83,9 +59,9 @@ const MaxPainChart: React.FC<MaxPainChartProps> = ({
     const option: echarts.EChartsOption = {
       tooltip: {
         trigger: 'axis',
-        formatter: (params: any) => {
-          const strike = params[0].axisValue;
-          const pain = params.find((p: any) => p.seriesName === 'Total Pain')?.value || 0;
+        formatter: (params: echarts.TooltipFormatterParams) => {
+          const strike = (params as echarts.TooltipFormatterParamsItem[])[0].axisValue;
+          const pain = (params as echarts.TooltipFormatterParamsItem[]).find((p) => p.seriesName === 'Total Pain')?.value || 0;
           const isMaxPain = parseInt(strike) === maxPainStrike;
           const isCurrentPrice = currentPriceIndex >= 0 && 
             Math.abs(parseFloat(strike) - (currentPrice || 0)) < 2.5; // 5美元间隔的一半

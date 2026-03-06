@@ -138,7 +138,6 @@ export function analyzeSkewStatus(skew25Delta: number): {
  */
 export function getSkewTradingImplications(
   status: string, 
-  skewPercent: number = 0,
   pcrStatus?: string
 ): string[] {
   const implications: string[] = [];
@@ -211,7 +210,7 @@ export function analyzeSkew(
   const statusInfo = analyzeSkewStatus(skew25Delta);
 
   // 获取交易启示
-  const tradingImplications = getSkewTradingImplications(statusInfo.status, skew25Delta, pcrStatus);
+  const tradingImplications = getSkewTradingImplications(statusInfo.status, pcrStatus);
 
   // 风险提示
   const riskWarnings: string[] = [];

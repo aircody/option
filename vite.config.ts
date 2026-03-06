@@ -11,16 +11,16 @@ export default defineConfig({
         changeOrigin: true,
         secure: true,
         rewrite: (path) => path.replace(/^\/api\/longport/, ''),
-        configure: (proxy, options) => {
-          proxy.on('proxyReq', (proxyReq, req, res) => {
+        configure: (proxy) => {
+          proxy.on('proxyReq', (proxyReq, req) => {
             console.log('[Proxy] Request:', req.method, req.url)
             console.log('[Proxy] Headers:', JSON.stringify(proxyReq.getHeaders(), null, 2))
           })
-          proxy.on('proxyRes', (proxyRes, req, res) => {
+          proxy.on('proxyRes', (proxyRes, req) => {
             console.log('[Proxy] Response:', proxyRes.statusCode, req.url)
             console.log('[Proxy] Response Headers:', JSON.stringify(proxyRes.headers, null, 2))
           })
-          proxy.on('error', (err, req, res) => {
+          proxy.on('error', (err) => {
             console.error('[Proxy] Error:', err.message)
             console.error('[Proxy] Error Stack:', err.stack)
           })

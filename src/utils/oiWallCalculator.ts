@@ -43,7 +43,6 @@ export function identifyOIWalls(data: OIData[], currentPrice: number): OIWall[] 
   // 计算平均 OI
   const avgCallOI = data.reduce((sum, d) => sum + d.callOI, 0) / data.length;
   const avgPutOI = data.reduce((sum, d) => sum + d.putOI, 0) / data.length;
-  const avgTotalOI = data.reduce((sum, d) => sum + d.callOI + d.putOI, 0) / data.length;
 
   // 识别 Call Wall（阻力位）：Call OI 显著高于平均且行权价 > 现价
   data

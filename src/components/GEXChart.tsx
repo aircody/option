@@ -2,17 +2,15 @@ import React, { useEffect, useRef, useMemo } from 'react';
 import * as echarts from 'echarts';
 import { Card, Typography, Tag, Space, Divider, List } from 'antd';
 import { calculateGEX, analyzeGEX, formatGEX } from '../utils/gexCalculator';
-import type { GEXData } from '../utils/gexCalculator';
 
 const { Text, Title } = Typography;
 
 interface GEXChartProps {
   oiData: { strike: number; callOI: number; putOI: number }[];
   currentPrice: number;
-  gammaExposure?: number;
 }
 
-const GEXChart: React.FC<GEXChartProps> = ({ oiData, currentPrice, gammaExposure }) => {
+const GEXChart: React.FC<GEXChartProps> = ({ oiData, currentPrice }) => {
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<echarts.ECharts | null>(null);
 
@@ -68,11 +66,11 @@ const GEXChart: React.FC<GEXChartProps> = ({ oiData, currentPrice, gammaExposure
           color: '#333'
         },
         extraCssText: 'box-shadow: 0 2px 8px rgba(0,0,0,0.15); border-radius: 4px; padding: 8px 12px;',
-        formatter: (params: any) => {
-          const strike = params[0].axisValue;
-          const totalGEX = params.find((p: any) => p.seriesName === 'Total GEX')?.value || 0;
-          const callGEX = params.find((p: any) => p.seriesName === 'Call GEX')?.value || 0;
-          const putGEX = params.find((p: any) => p.seriesName === 'Put GEX')?.value || 0;
+        formatter: (params: echarts.TooltipFormatterParams) => {
+          const strike = (params as echarts.TooltipFormatterParamsItem[])[0].axisValue;
+          const totalGEX = (params as echarts.TooltipFormatterParamsItem[]).find((p) => p.seriesName === 'Total GEX')?.value || 0;
+          const callGEX = (params as echarts.TooltipFormatterParamsItem[]).find((p) => p.seriesName === 'Call GEX')?.value || 0;
+          const putGEX = (params as echarts.TooltipFormatterParamsItem[]).find((p) => p.seriesName === 'Put GEX')?.value || 0;
           
           return `
             <div style="font-weight: bold; margin-bottom: 8px; border-bottom: 1px solid #f0f0f0; padding-bottom: 4px;">Strike: $${strike}</div>

@@ -10,8 +10,6 @@
  * - VRP: 波动率风险溢价 = ATM IV - HV
  */
 
-import type { OIData } from '../types';
-
 /**
  * IV 数据接口
  */
@@ -40,13 +38,27 @@ export interface IVAnalysisResult {
   riskWarnings: string[];   // 风险提示
 }
 
+interface ApiOptionItem {
+  strike?: number;
+  callIV?: number;
+  putIV?: number;
+}
+
+interface ApiDataItem {
+  strike_price?: number;
+  strike?: number;
+  implied_volatility?: number;
+  iv?: number;
+  direction?: string;
+}
+
 /**
  * 从 API 数据格式提取 IV 信息
  * @param apiOptionData Python后端返回的期权数据格式
  * @param underlyingPrice 标的资产当前价格
  * @returns IV 数据数组
  */
-export function extractIVDataFromApiOption(apiOptionData: any[], underlyingPrice: number): IVData[] {
+export function extractIVDataFromApiOption(apiOptionData: ApiOptionItem[], underlyingPrice: number): IVData[] {
   if (!apiOptionData || !Array.isArray(apiOptionData) || !underlyingPrice) {
     return [];
   }
@@ -78,7 +90,7 @@ export function extractIVDataFromApiOption(apiOptionData: any[], underlyingPrice
  * @param underlyingPrice 标的资产当前价格
  * @returns IV 数据数组
  */
-export function extractIVData(apiData: any[], underlyingPrice: number): IVData[] {
+export function extractIVData(apiData: ApiDataItem[], underlyingPrice: number): IVData[] {
   if (!apiData || !Array.isArray(apiData) || !underlyingPrice) {
     return [];
   }
@@ -317,7 +329,7 @@ export function getIVTradingImplications(
  * @returns IV 分析结果
  */
 export function analyzeIV(
-  apiData: any[],
+  apiData: ApiDataItem[],
   underlyingPrice: number,
   pcrStatus?: string
 ): IVAnalysisResult {

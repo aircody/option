@@ -1,44 +1,38 @@
 import React, { useEffect, useRef, useMemo } from 'react';
 import * as echarts from 'echarts';
-import { Card, Typography, Tag, Space, Divider, List, Row, Col, Statistic } from 'antd';
+import { Card, Typography, Tag, Space, List, Row, Col, Statistic } from 'antd';
 import { extractIVDataFromApiOption, analyzeVRPStatus, formatIV, formatVRP } from '../utils/ivCalculator';
-import type { IVData } from '../utils/ivCalculator';
 
 const { Text, Title } = Typography;
 
 interface IVChartProps {
-  oiData: { strike: number; callOI: number; putOI: number }[];
   currentPrice: number;
   atmIv?: number;
   hv?: number;
   vrp?: number;
-  gammaExposure?: number;
-  pcr?: number;
-  ivData?: any;
-  optionChain?: any[];
+  ivData?: {
+    tradingImplications?: string[];
+    riskWarnings?: string[];
+  };
+  optionChain?: unknown[];
 }
 
 const IVChart: React.FC<IVChartProps> = ({ 
-  oiData, 
   currentPrice, 
   atmIv, 
   hv, 
   vrp,
-  gammaExposure,
-  pcr,
   ivData,
   optionChain
 }) => {
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<echarts.ECharts | null>(null);
 
-  // 辅助函数：获取VRP颜色
   const getVRPColor = (vrpPercent: number): string => {
     const status = analyzeVRPStatus(vrpPercent);
     return status.color;
   };
 
-  // 提取IV数据用于图表
   const ivDataArray = useMemo(() => {
     if (optionChain) {
       return extractIVDataFromApiOption(optionChain, currentPrice);
@@ -46,10 +40,8 @@ const IVChart: React.FC<IVChartProps> = ({
     return [];
   }, [optionChain, currentPrice]);
 
-  // 获取VRP颜色 - 直接使用传入的vrp值
   const vrpColor = getVRPColor(vrp || 0);
 
-  // 找到当前价格对应的IV索引
   const currentPriceIndex = useMemo(() => {
     return ivDataArray.findIndex(d => d.strike >= currentPrice);
   }, [ivDataArray, currentPrice]);
@@ -57,7 +49,6 @@ const IVChart: React.FC<IVChartProps> = ({
   useEffect(() => {
     if (!chartRef.current) return;
 
-    // 初始化图表
     if (!chartInstance.current) {
       chartInstance.current = echarts.init(chartRef.current);
     }
@@ -67,10 +58,24 @@ const IVChart: React.FC<IVChartProps> = ({
     const putIVValues = ivDataArray.map(d => d.putIV * 100);
     const atmIVValues = ivDataArray.map(d => d.avgIV * 100);
 
-    // 安全检查：如果没有数据，使用默认值
-    const hasData = strikes.length > 0;
-    const minIV = hasData ? Math.min(...atmIVValues) * 0.8 : 10;
-    const maxIV = hasData ? Math.max(...callIVValues, ...putIVValues) * 1.1 : 50;
+    const updateYAxisRange = (startPercent: number, endPercent: number) => {
+      const startIndex = Math.floor(startPercent / 100 * (ivDataArray.length - 1));
+      const endIndex = Math.ceil(endPercent / 100 * (ivDataArray.length - 1));
+      const visibleData = ivDataArray.slice(startIndex, endIndex + 1);
+      
+      if (visibleData.length === 0) return { min: 0, max: 100 };
+      
+      const visibleIVs = visibleData.flatMap(d => [d.callIV * 100, d.putIV * 100, d.avgIV * 100]);
+      const minIV = Math.min(...visibleIVs);
+      const maxIV = Math.max(...visibleIVs);
+      const padding = (maxIV - minIV) * 0.2;
+      return { 
+        min: Math.max(0, minIV - padding), 
+        max: maxIV + padding 
+      };
+    };
+
+    const initialRange = updateYAxisRange(0, 100);
 
     const option: echarts.EChartsOption = {
       backgroundColor: 'transparent',
@@ -97,11 +102,11 @@ const IVChart: React.FC<IVChartProps> = ({
           color: '#333'
         },
         extraCssText: 'box-shadow: 0 2px 8px rgba(0,0,0,0.15); border-radius: 4px; padding: 8px 12px;',
-        formatter: (params: any) => {
-          const strike = params[0].axisValue;
-          const callIV = params.find((p: any) => p.seriesName === 'Call IV')?.value || 0;
-          const putIV = params.find((p: any) => p.seriesName === 'Put IV')?.value || 0;
-          const atmIV = params.find((p: any) => p.seriesName === 'ATM IV')?.value || 0;
+        formatter: (params: echarts.TooltipFormatterParams) => {
+          const strike = (params as echarts.TooltipFormatterParamsItem[])[0].axisValue;
+          const callIV = (params as echarts.TooltipFormatterParamsItem[]).find((p) => p.seriesName === 'Call IV')?.value || 0;
+          const putIV = (params as echarts.TooltipFormatterParamsItem[]).find((p) => p.seriesName === 'Put IV')?.value || 0;
+          const atmIV = (params as echarts.TooltipFormatterParamsItem[]).find((p) => p.seriesName === 'ATM IV')?.value || 0;
           
           return `
             <div style="font-weight: bold; margin-bottom: 8px; border-bottom: 1px solid #f0f0f0; padding-bottom: 4px;">Strike: $${strike}</div>
@@ -181,8 +186,8 @@ const IVChart: React.FC<IVChartProps> = ({
             type: 'dashed',
           },
         },
-        min: minIV,
-        max: maxIV,
+        min: initialRange.min,
+        max: initialRange.max,
       },
       series: [
         {
@@ -243,7 +248,6 @@ const IVChart: React.FC<IVChartProps> = ({
             },
           },
         },
-        // 现价垂直虚线
         ...(currentPriceIndex >= 0 ? [{
           name: 'Current Price' as const,
           type: 'line' as const,
@@ -268,7 +272,15 @@ const IVChart: React.FC<IVChartProps> = ({
 
     chartInstance.current.setOption(option);
 
-    // 响应式
+    chartInstance.current.on('dataZoom', (params: any) => {
+      const start = params.batch ? params.batch[0].start : params.start;
+      const end = params.batch ? params.batch[0].end : params.end;
+      const newRange = updateYAxisRange(start, end);
+      chartInstance.current?.setOption({
+        yAxis: { min: newRange.min, max: newRange.max }
+      });
+    });
+
     const handleResize = () => {
       chartInstance.current?.resize();
     };
@@ -291,7 +303,6 @@ const IVChart: React.FC<IVChartProps> = ({
       }
       style={{ height: '100%' }}
     >
-      {/* IV 总览 */}
       <div style={{ marginBottom: 16, padding: 12, background: '#f6ffed', borderRadius: 8 }}>
         <Row gutter={[16, 8]}>
           <Col span={8}>
@@ -333,7 +344,6 @@ const IVChart: React.FC<IVChartProps> = ({
         </Text>
       </div>
 
-      {/* VRP 解释 */}
       <div style={{ marginBottom: 16, padding: 8, background: '#f5f5f5', borderRadius: 4 }}>
         <Text strong style={{ fontSize: 11, color: '#666', display: 'block', marginBottom: 8 }}>
           VRP (波动率风险溢价) 解读:
@@ -361,10 +371,8 @@ const IVChart: React.FC<IVChartProps> = ({
         </div>
       </div>
 
-      {/* 图表 */}
       <div ref={chartRef} style={{ height: 300, width: '100%' }} />
 
-      {/* 交易启示 */}
       <div style={{ marginTop: 16 }}>
         <Text strong style={{ fontSize: 12, color: '#666' }}>
           交易启示：
@@ -380,7 +388,6 @@ const IVChart: React.FC<IVChartProps> = ({
         />
       </div>
 
-      {/* 风险提示 */}
       {ivData?.riskWarnings && ivData.riskWarnings.length > 0 && (
         <div style={{ marginTop: 12, padding: 8, background: '#fff2f0', borderRadius: 4 }}>
           <Text strong style={{ fontSize: 11, color: '#ff4d4f' }}>

@@ -203,9 +203,6 @@ export function getRiskWarnings(status: string): string[] {
  * @returns PCR 分析结果
  */
 export function analyzePCR(oiData: OIData[]): PCRAnalysisResult {
-  // 计算 PCR 数据
-  const pcrData = calculatePCRData(oiData);
-  
   // 计算总 OI 和成交量
   const totalPutOI = oiData.reduce((sum, data) => sum + data.putOI, 0);
   const totalCallOI = oiData.reduce((sum, data) => sum + data.callOI, 0);
