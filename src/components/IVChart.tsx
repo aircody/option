@@ -15,6 +15,9 @@ interface IVChartProps {
     riskWarnings?: string[];
   };
   optionChain?: unknown[];
+  oiData?: unknown[];
+  gammaExposure?: number;
+  pcr?: number;
 }
 
 const IVChart: React.FC<IVChartProps> = ({ 
@@ -23,7 +26,10 @@ const IVChart: React.FC<IVChartProps> = ({
   hv, 
   vrp,
   ivData,
-  optionChain
+  optionChain,
+  oiData,
+  gammaExposure,
+  pcr
 }) => {
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<echarts.ECharts | null>(null);
@@ -58,9 +64,11 @@ const IVChart: React.FC<IVChartProps> = ({
     const putIVValues = ivDataArray.map(d => d.putIV * 100);
     const atmIVValues = ivDataArray.map(d => d.avgIV * 100);
 
-    const updateYAxisRange = (startPercent: number, endPercent: number) => {
-      const startIndex = Math.floor(startPercent / 100 * (ivDataArray.length - 1));
-      const endIndex = Math.ceil(endPercent / 100 * (ivDataArray.length - 1));
+    const updateYAxisRange = (startPercent: number | undefined, endPercent: number | undefined) => {
+      const start = startPercent ?? 0;
+      const end = endPercent ?? 100;
+      const startIndex = Math.floor(start / 100 * (ivDataArray.length - 1));
+      const endIndex = Math.ceil(end / 100 * (ivDataArray.length - 1));
       const visibleData = ivDataArray.slice(startIndex, endIndex + 1);
       
       if (visibleData.length === 0) return { min: 0, max: 100 };
@@ -272,9 +280,10 @@ const IVChart: React.FC<IVChartProps> = ({
 
     chartInstance.current.setOption(option);
 
-    chartInstance.current.on('dataZoom', (params: any) => {
-      const start = params.batch ? params.batch[0].start : params.start;
-      const end = params.batch ? params.batch[0].end : params.end;
+    chartInstance.current.on('dataZoom', (params: unknown) => {
+      const p = params as { batch?: { start: number; end: number }[]; start?: number; end?: number };
+      const start = p.batch ? p.batch[0].start : p.start;
+      const end = p.batch ? p.batch[0].end : p.end;
       const newRange = updateYAxisRange(start, end);
       chartInstance.current?.setOption({
         yAxis: { min: newRange.min, max: newRange.max }

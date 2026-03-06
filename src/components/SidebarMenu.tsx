@@ -1,7 +1,7 @@
 import React from 'react';
 import { Menu } from 'antd';
 import type { MenuProps } from 'antd';
-import { BarChartOutlined, SettingOutlined } from '@ant-design/icons';
+import { BarChartOutlined, SettingOutlined, StarOutlined } from '@ant-design/icons';
 
 interface SidebarMenuProps {
   selectedKey: string;
@@ -16,6 +16,11 @@ const SidebarMenu: React.FC<SidebarMenuProps> = ({ selectedKey, onSelect }) => {
       key: 'option-analysis',
       icon: <BarChartOutlined />,
       label: '期权分析',
+    },
+    {
+      key: 'strategy-subscription',
+      icon: <StarOutlined />,
+      label: '期权策略订阅',
     },
     {
       key: 'settings',

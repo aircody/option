@@ -59,12 +59,13 @@ const MaxPainChart: React.FC<MaxPainChartProps> = ({
     const option: echarts.EChartsOption = {
       tooltip: {
         trigger: 'axis',
-        formatter: (params: echarts.TooltipFormatterParams) => {
-          const strike = (params as echarts.TooltipFormatterParamsItem[])[0].axisValue;
-          const pain = (params as echarts.TooltipFormatterParamsItem[]).find((p) => p.seriesName === 'Total Pain')?.value || 0;
-          const isMaxPain = parseInt(strike) === maxPainStrike;
+        formatter: (params: unknown) => {
+          const p = params as { axisValue: unknown; seriesName: string; value: unknown }[];
+          const strike = p[0].axisValue;
+          const pain = p.find((item) => item.seriesName === 'Total Pain')?.value as number || 0;
+          const isMaxPain = parseInt(strike as string) === maxPainStrike;
           const isCurrentPrice = currentPriceIndex >= 0 && 
-            Math.abs(parseFloat(strike) - (currentPrice || 0)) < 2.5; // 5美元间隔的一半
+            Math.abs(parseFloat(strike as string) - (currentPrice || 0)) < 2.5; // 5美元间隔的一半
           
           let html = `
             <div style="font-weight:bold;margin-bottom:5px">执行价: $${strike}</div>

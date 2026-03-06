@@ -55,7 +55,7 @@ const SymbolSelector: React.FC<SymbolSelectorProps> = ({
     }
     
     if (!/^[A-Z]{1,5}$/.test(symbol)) {
-      message.warning('股票代码格式不正确，请输入1-5个字母');
+      message.warning('股票代码格式不正确，请输入 1-5 个字母');
       return;
     }
 
@@ -65,7 +65,7 @@ const SymbolSelector: React.FC<SymbolSelectorProps> = ({
   };
 
   const handleTagClick = (symbol: string) => {
-    handleAnalyze(symbol);
+    onSymbolChange(symbol);
   };
 
   const handleAnalyzeClick = () => {

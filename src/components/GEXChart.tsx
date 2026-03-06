@@ -8,6 +8,7 @@ const { Text, Title } = Typography;
 interface GEXChartProps {
   oiData: { strike: number; callOI: number; putOI: number }[];
   currentPrice: number;
+  gammaExposure?: number;
 }
 
 const GEXChart: React.FC<GEXChartProps> = ({ oiData, currentPrice }) => {

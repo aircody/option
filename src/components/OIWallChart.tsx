@@ -8,12 +8,14 @@ interface OIWallChartProps {
   data: OIData[];
   currentPrice?: number;
   daysToExpiry?: number;
+  maxPain?: number;
 }
 
 const OIWallChart: React.FC<OIWallChartProps> = ({ 
   data, 
   currentPrice,
-  daysToExpiry = 30 
+  daysToExpiry = 30,
+  maxPain
 }) => {
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<echarts.ECharts | null>(null);
@@ -92,10 +94,11 @@ const OIWallChart: React.FC<OIWallChartProps> = ({
           fontSize: 13,
           lineHeight: 1.6,
         },
-        formatter: (params: any) => {
-          const strike = (params as any[])[0].axisValue;
-          const callOI = (params as any[]).find((p) => p.seriesName === 'Call OI (阻力)')?.value || 0;
-          const putOI = (params as any[]).find((p) => p.seriesName === 'Put OI (支撑)')?.value || 0;
+        formatter: (params: unknown) => {
+          const p = params as { axisValue: unknown; seriesName: string; value: unknown }[];
+          const strike = p[0].axisValue;
+          const callOI = p.find((item) => item.seriesName === 'Call OI (阻力)')?.value as number || 0;
+          const putOI = p.find((item) => item.seriesName === 'Put OI (支撑)')?.value as number || 0;
           
           const oiResult = oiWallResults.find(r => r.strike === parseInt(strike));
           let wallInfo = '';
@@ -373,10 +376,10 @@ const OIWallChart: React.FC<OIWallChartProps> = ({
         <div>
           <div>OI Wall - 持仓墙 (支撑/阻力)</div>
           {strongestSupport && strongestResistance && (
-            <div style={{ fontSize: '12px', fontWeight: 'normal', marginTop: '4px', color: '#666' }>
-              <span style={{ color: '#52c41a', fontWeight: 500 }}>强支撑: ${strongestSupport.strike} ({formatOI(strongestSupport.putOI)})</span>
-              <span style={{ margin: '0 12px' }}>|</span>
-              <span style={{ color: '#ff4d4f', fontWeight: 500 }}>强阻力: ${strongestResistance.strike} ({formatOI(strongestResistance.callOI)})</span>
+            <div style={{ fontSize: '12px', fontWeight: 'normal', marginTop: '4px', color: '#666' }}>
+              <span style={{ color: '#52c41a', fontWeight: 500 }}>强支撑：${strongestSupport.strike} ({formatOI(strongestSupport.putOI)})</span>
+              <span style={{ margin: '0 12px' }}>{'|'}</span>
+              <span style={{ color: '#ff4d4f', fontWeight: 500 }}>强阻力：${strongestResistance.strike} ({formatOI(strongestResistance.callOI)})</span>
             </div>
           )}
         </div>

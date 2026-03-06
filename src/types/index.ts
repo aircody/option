@@ -117,6 +117,7 @@ export interface OptionAnalysisData {
   skew: number;
   hv: number;
   vrp: number;
+  ivPercentile?: number;
   oiData: OIData[];
   maxPainCurve: MaxPainData[];
   lastUpdated: string;

@@ -8,6 +8,7 @@ const { Text, Title } = Typography;
 interface PCRChartProps {
   oiData: { strike: number; callOI: number; putOI: number }[];
   currentPrice: number;
+  putCallRatio?: number;
 }
 
 interface PCRZoneInfo {
@@ -23,7 +24,7 @@ const getPCRZoneInfo = (pcr: number): PCRZoneInfo => {
   };
 };
 
-const PCRChart: React.FC<PCRChartProps> = ({ oiData, currentPrice }) => {
+const PCRChart: React.FC<PCRChartProps> = ({ oiData, currentPrice, putCallRatio }) => {
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<echarts.ECharts | null>(null);
 
@@ -56,9 +57,11 @@ const PCRChart: React.FC<PCRChartProps> = ({ oiData, currentPrice }) => {
     const pcrOIValues = pcrData.map(d => d.pcrOI);
     const pcrVolumeValues = pcrData.map(d => d.pcrVolume);
 
-    const updateYAxisRange = (startPercent: number, endPercent: number) => {
-      const startIndex = Math.floor(startPercent / 100 * (pcrData.length - 1));
-      const endIndex = Math.ceil(endPercent / 100 * (pcrData.length - 1));
+    const updateYAxisRange = (startPercent: number | undefined, endPercent: number | undefined) => {
+      const start = startPercent ?? 0;
+      const end = endPercent ?? 100;
+      const startIndex = Math.floor(start / 100 * (pcrData.length - 1));
+      const endIndex = Math.ceil(end / 100 * (pcrData.length - 1));
       const visibleData = pcrData.slice(startIndex, endIndex + 1);
       
       if (visibleData.length === 0) return { min: 0, max: 3 };
@@ -95,10 +98,11 @@ const PCRChart: React.FC<PCRChartProps> = ({ oiData, currentPrice }) => {
           color: '#333'
         },
         extraCssText: 'box-shadow: 0 2px 8px rgba(0,0,0,0.15); border-radius: 4px; padding: 8px 12px;',
-        formatter: (params: echarts.TooltipFormatterParams) => {
-          const strike = (params as echarts.TooltipFormatterParamsItem[])[0].axisValue;
-          const pcrOI = (params as echarts.TooltipFormatterParamsItem[]).find((p) => p.seriesName === 'PCR (OI)')?.value || 0;
-          const pcrVol = (params as echarts.TooltipFormatterParamsItem[]).find((p) => p.seriesName === 'PCR (Volume)')?.value || 0;
+        formatter: (params: unknown) => {
+          const p = params as { axisValue: unknown; seriesName: string; value: unknown }[];
+          const strike = p[0].axisValue;
+          const pcrOI = p.find((item) => item.seriesName === 'PCR (OI)')?.value as number || 0;
+          const pcrVol = p.find((item) => item.seriesName === 'PCR (Volume)')?.value as number || 0;
           const zone = getPCRZoneInfo(pcrOI);
           
           return `
@@ -327,9 +331,10 @@ const PCRChart: React.FC<PCRChartProps> = ({ oiData, currentPrice }) => {
 
     chartInstance.current.setOption(option);
 
-    chartInstance.current.on('dataZoom', (params: any) => {
-      const start = params.batch ? params.batch[0].start : params.start;
-      const end = params.batch ? params.batch[0].end : params.end;
+    chartInstance.current.on('dataZoom', (params: unknown) => {
+      const p = params as { batch?: { start: number; end: number }[]; start?: number; end?: number };
+      const start = p.batch ? p.batch[0].start : p.start;
+      const end = p.batch ? p.batch[0].end : p.end;
       const newRange = updateYAxisRange(start, end);
       chartInstance.current?.setOption({
         yAxis: { min: newRange.min, max: newRange.max }

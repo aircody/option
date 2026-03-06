@@ -12,6 +12,7 @@ import IVChart from '../components/IVChart';
 import SkewChart from '../components/SkewChart';
 import StrategyGuide from '../components/StrategyGuide';
 import Settings from './Settings';
+import StrategySubscription from './StrategySubscription';
 import { fetchOptionAnalysis, fetchExpiryDates } from '../services/optionService';
 import type { OptionAnalysisData, ExpiryDate } from '../types';
 
@@ -180,6 +181,10 @@ const OptionAnalysis: React.FC = () => {
   const renderContent = () => {
     if (selectedMenuKey === 'settings') {
       return <Settings />;
+    }
+
+    if (selectedMenuKey === 'strategy-subscription') {
+      return <StrategySubscription />;
     }
 
     return (

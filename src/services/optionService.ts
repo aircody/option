@@ -74,21 +74,7 @@ const formatShortDate = (date: Date): string => {
   return `${month}/${day}`;
 };
 
-const isThisFriday = (date: Date, today: Date): boolean => {
-  const dayOfWeek = date.getDay();
-  if (dayOfWeek !== 5) return false;
-  
-  const diffDays = Math.floor((date.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-  return diffDays >= 0 && diffDays < 7;
-};
 
-const isNextFriday = (date: Date, today: Date): boolean => {
-  const dayOfWeek = date.getDay();
-  if (dayOfWeek !== 5) return false;
-  
-  const diffDays = Math.floor((date.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-  return diffDays >= 7 && diffDays < 14;
-};
 
 const isMonthlyOPEX = (date: Date): boolean => {
   const dayOfWeek = date.getDay();
@@ -109,7 +95,7 @@ const getSpecialType = (label: string): ExpiryDateInfo['specialType'] => {
   }
 };
 
-const getExpiryLabel = (date: Date, daysToExpiry: number, today: Date): string => {
+const getExpiryLabel = (date: Date, daysToExpiry: number): string => {
   const dayOfWeek = date.getDay();
   const isFriday = dayOfWeek === 5;
   
@@ -191,7 +177,7 @@ export const fetchExpiryDates = async (symbol: string): Promise<ExpiryDate[]> =>
     return expiryDatesList.map((dateStr: string) => {
       const date = new Date(dateStr);
       const daysToExpiry = Math.ceil((date.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-      const label = getExpiryLabel(date, daysToExpiry, today);
+      const label = getExpiryLabel(date, daysToExpiry);
 
       return {
         label,
@@ -337,6 +323,7 @@ function calculateOptionMetrics(
     skew: ivResult.putSkew,
     hv: ivResult.hv,
     vrp: ivResult.vrpPercent,
+    ivPercentile: 50,
     oiData,
     maxPainCurve,
     lastUpdated,
@@ -350,7 +337,7 @@ function calculateOptionMetrics(
 function analyzeIVWithApiData(
   optionChain: ApiOptionData[],
   lastPrice: number,
-  pcrStatus: unknown,
+  pcrStatus: 'extreme_bearish' | 'bearish' | 'neutral' | 'bullish' | 'extreme_bullish' | undefined,
   avgHV: number
 ) {
   console.log('[analyzeIVWithApiData] 开始分析', {

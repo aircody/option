@@ -23,6 +23,9 @@ interface SkewChartProps {
   ivData?: IVData;
   optionChain?: OptionChainItem[];
   pcrStatus?: string;
+  oiData?: unknown[];
+  gammaExposure?: number;
+  pcr?: number;
 }
 
 const SkewChart: React.FC<SkewChartProps> = ({
@@ -30,7 +33,10 @@ const SkewChart: React.FC<SkewChartProps> = ({
   atmIV,
   ivData,
   optionChain,
-  pcrStatus
+  pcrStatus,
+  oiData,
+  gammaExposure,
+  pcr
 }) => {
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<echarts.ECharts | null>(null);
@@ -134,10 +140,11 @@ const SkewChart: React.FC<SkewChartProps> = ({
           color: '#333'
         },
         extraCssText: 'box-shadow: 0 2px 8px rgba(0,0,0,0.15); border-radius: 4px; padding: 8px 12px;',
-        formatter: (params: echarts.TooltipFormatterParams) => {
-          const strike = (params as echarts.TooltipFormatterParamsItem[])[0].axisValue;
-          const callSkew = (params as echarts.TooltipFormatterParamsItem[]).find((p) => p.seriesName === 'Call Skew')?.value || 0;
-          const putSkew = (params as echarts.TooltipFormatterParamsItem[]).find((p) => p.seriesName === 'Put Skew')?.value || 0;
+        formatter: (params: unknown) => {
+          const p = params as { axisValue: unknown; seriesName: string; value: unknown }[];
+          const strike = p[0].axisValue;
+          const callSkew = p.find((item) => item.seriesName === 'Call Skew')?.value as number || 0;
+          const putSkew = p.find((item) => item.seriesName === 'Put Skew')?.value as number || 0;
 
           return `
             <div style="font-weight: bold; margin-bottom: 8px; border-bottom: 1px solid #f0f0f0; padding-bottom: 4px;">Strike: $${strike}</div>
