@@ -7,6 +7,8 @@ import { analyzeGEX } from '../utils/gexCalculator';
 import { analyzePCR } from '../utils/pcrCalculator';
 import { getIVTradingImplications, analyzeVRPStatus } from '../utils/ivCalculator';
 import { envConfig } from '../config/env';
+import { getCurrentEasternTime, formatShortDate } from '../utils/formatters';
+import { DTE_LIMIT } from '../utils/constants';
 
 interface ApiOptionData {
   strike: number;
@@ -68,18 +70,9 @@ const handleApiResponse = async (response: Response) => {
   return response.json();
 };
 
-const formatShortDate = (date: Date): string => {
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${month}/${day}`;
-};
-
-
-
 const isMonthlyOPEX = (date: Date): boolean => {
   const dayOfWeek = date.getDay();
   if (dayOfWeek !== 5) return false;
-  
   const weekOfMonth = Math.ceil(date.getDate() / 7);
   return weekOfMonth === 3;
 };
@@ -98,31 +91,18 @@ const getSpecialType = (label: string): ExpiryDateInfo['specialType'] => {
 const getExpiryLabel = (date: Date, daysToExpiry: number): string => {
   const dayOfWeek = date.getDay();
   const isFriday = dayOfWeek === 5;
-  
+
   if (daysToExpiry === 0) return '今日ODTE';
   if (daysToExpiry === 1) return '明日';
   if (isMonthlyOPEX(date)) return '月度OPEX';
-  
+
   if (isFriday) {
     if (daysToExpiry >= 2 && daysToExpiry < 7) return '本周五';
     if (daysToExpiry >= 7 && daysToExpiry < 14) return '下周五';
     return formatShortDate(date);
   }
-  
-  return formatShortDate(date);
-};
 
-const getCurrentEasternTime = (): string => {
-  const now = new Date();
-  return now.toLocaleString('zh-CN', {
-    timeZone: envConfig.TIMEZONE,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
+  return formatShortDate(date);
 };
 
 export const fetchOptionAnalysis = async (
@@ -130,7 +110,7 @@ export const fetchOptionAnalysis = async (
   expiryDate?: string
 ): Promise<OptionAnalysisData> => {
   const config = getApiConfig();
-  
+
   if (config.useMock) {
     await new Promise((resolve) => setTimeout(resolve, envConfig.MOCK_DELAY_MS));
     return getMockOptionData(symbol, expiryDate);
@@ -146,17 +126,16 @@ export const fetchOptionAnalysis = async (
       expiryDate
     );
   } catch (error) {
-    console.error('Failed to fetch option analysis:', error);
     throw new Error('获取期权数据失败: ' + (error as Error).message);
   }
 };
 
 export const fetchExpiryDates = async (symbol: string): Promise<ExpiryDate[]> => {
   const config = getApiConfig();
-  
+
   if (config.useMock) {
     await new Promise((resolve) => setTimeout(resolve, 200));
-    const expiryDateData = generateExpiryDateData(symbol, new Date(), 45);
+    const expiryDateData = generateExpiryDateData(symbol, new Date(), DTE_LIMIT);
     return expiryDateData.map(item => ({
       label: item.label,
       date: item.date,
@@ -179,14 +158,9 @@ export const fetchExpiryDates = async (symbol: string): Promise<ExpiryDate[]> =>
       const daysToExpiry = Math.ceil((date.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
       const label = getExpiryLabel(date, daysToExpiry);
 
-      return {
-        label,
-        date: dateStr,
-        daysToExpiry,
-      };
+      return { label, date: dateStr, daysToExpiry };
     });
   } catch (error) {
-    console.error('Failed to fetch expiry dates:', error);
     throw new Error('获取到期日失败: ' + (error as Error).message);
   }
 };
@@ -224,12 +198,6 @@ export const fetchOptionChain = async (
   });
 
   const data: ApiChainResponse = await handleApiResponse(response);
-  
-  console.log('[fetchOptionChain] API 返回数据:', {
-    optionsCount: data.options?.length || 0,
-    underlying: data.underlying,
-    summary: data.summary,
-  });
 
   return {
     options: data.options || [],
@@ -246,14 +214,14 @@ export const fetchOptionChain = async (
 
 export const fetchExpiryDatesWithInfo = async (symbol: string): Promise<ExpiryDateInfo[]> => {
   const config = getApiConfig();
-  
+
   if (config.useMock) {
     await new Promise((resolve) => setTimeout(resolve, 200));
-    return generateExpiryDateData(symbol, new Date(), 45);
+    return generateExpiryDateData(symbol, new Date(), DTE_LIMIT);
   }
 
   const dates = await fetchExpiryDates(symbol);
-  
+
   return dates.map(date => ({
     label: date.label,
     date: date.date,
@@ -271,20 +239,16 @@ function calculateOptionMetrics(
   expiryDate?: string
 ): OptionAnalysisData {
   if (!optionChain || optionChain.length === 0) {
-    console.log('[calculateOptionMetrics] No option chain data, using mock data');
     return getMockOptionData(symbol, expiryDate);
   }
-
-  console.log('[calculateOptionMetrics] Processing', optionChain.length, 'option chain items');
 
   const oiData: OIData[] = optionChain.map(item => ({
     strike: item.strike || 0,
     callOI: item.callOI || 0,
     putOI: item.putOI || 0,
   }));
-  
+
   const { maxPain, maxPainCurve } = calculateMaxPain(oiData);
-  console.log('[calculateOptionMetrics] Max Pain计算结果:', { maxPain, maxPainCurveCount: maxPainCurve.length });
 
   let lastPrice = underlying.last_price;
   if (!lastPrice || lastPrice <= 0) {
@@ -294,9 +258,6 @@ function calculateOptionMetrics(
       const middleIndex = Math.floor(sortedStrikes.length / 2);
       lastPrice = sortedStrikes[middleIndex].strike || lastPrice;
     }
-    console.log('[calculateOptionMetrics] 使用计算得到的现价:', lastPrice);
-  } else {
-    console.log('[calculateOptionMetrics] 使用从 API 获取的标的资产现价:', lastPrice);
   }
 
   let priceChange = 0;
@@ -340,14 +301,7 @@ function analyzeIVWithApiData(
   pcrStatus: 'extreme_bearish' | 'bearish' | 'neutral' | 'bullish' | 'extreme_bullish' | undefined,
   avgHV: number
 ) {
-  console.log('[analyzeIVWithApiData] 开始分析', {
-    optionChainCount: optionChain.length,
-    lastPrice,
-    avgHV,
-  });
-
   if (optionChain.length === 0) {
-    console.log('[analyzeIVWithApiData] 无期权链数据');
     return {
       atmIV: 0,
       hv: avgHV,
@@ -375,7 +329,7 @@ function analyzeIVWithApiData(
 
   for (const opt of optionChain) {
     const strike = opt.strike;
-    
+
     if (!lastPrice || lastPrice <= 0) {
       const avgIV = (opt.callIV + opt.putIV) / 2;
       if (avgIV > 0) {
@@ -387,7 +341,7 @@ function analyzeIVWithApiData(
     }
 
     const distance = Math.abs(strike - lastPrice) / lastPrice;
-    
+
     if (distance < minDistanceATM) {
       minDistanceATM = distance;
       const avgIV = (opt.callIV + opt.putIV) / 2;
@@ -399,14 +353,14 @@ function analyzeIVWithApiData(
         atmIV = opt.putIV;
       }
     }
-    
+
     const put25Target = lastPrice * envConfig.IV_PUT_TARGET_FACTOR;
     const put25Distance = Math.abs(strike - put25Target) / lastPrice;
     if (put25Distance < minDistancePut25 && opt.putIV > 0) {
       minDistancePut25 = put25Distance;
       put25IV = opt.putIV;
     }
-    
+
     const call25Target = lastPrice * envConfig.IV_CALL_TARGET_FACTOR;
     const call25Distance = Math.abs(strike - call25Target) / lastPrice;
     if (call25Distance < minDistanceCall25 && opt.callIV > 0) {
@@ -421,7 +375,6 @@ function analyzeIVWithApiData(
       .filter(iv => iv > 0);
     if (validIVs.length > 0) {
       atmIV = validIVs.reduce((a, b) => a + b, 0) / validIVs.length;
-      console.log('[analyzeIVWithApiData] 使用平均IV作为ATM IV:', atmIV);
     }
   }
 
@@ -444,20 +397,10 @@ function analyzeIVWithApiData(
   const vrpPercent = hv > 0 ? (vrp / hv) * 100 : 0;
   const skew25Delta = put25IV > 0 && call25IV > 0 ? put25IV - call25IV : 0;
 
-  console.log('[analyzeIVWithApiData] 分析结果:', {
-    atmIV,
-    put25IV,
-    call25IV,
-    hv,
-    vrp,
-    vrpPercent,
-    skew25Delta,
-  });
-
   const vrpStatusInfo = analyzeVRPStatus(vrpPercent);
   const tradingImplications = getIVTradingImplications(vrpStatusInfo.status, pcrStatus);
   const riskWarnings: string[] = [];
-  
+
   if (vrpStatusInfo.status === 'extreme') {
     riskWarnings.push('极端高溢价，波动率可能进一步上行');
   }
@@ -505,11 +448,8 @@ export const testApiConnection = async (): Promise<boolean> => {
     });
 
     const data = await handleApiResponse(response);
-    console.log('[testApiConnection] Response:', data);
-
     return data.success === true;
-  } catch (error) {
-    console.error('API connection test failed:', error);
+  } catch {
     return false;
   }
 };

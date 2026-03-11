@@ -18,6 +18,10 @@ import {
   Alert,
   Progress,
   Statistic,
+  Tooltip,
+  Popover,
+  List,
+  Badge,
 } from 'antd';
 import {
   SearchOutlined,
@@ -29,10 +33,14 @@ import {
   ThunderboltOutlined,
   SafetyOutlined,
   RiseOutlined,
+  StarFilled,
+  DeleteOutlined,
 } from '@ant-design/icons';
 import { fetchOptionAnalysis, fetchExpiryDates } from '../services/optionService';
 import { generateStrategyRecommendation } from '../utils/strategyCalculator';
 import type { ExpiryDate } from '../types';
+import { useLocalStorage } from '../hooks/useLocalStorage';
+import { PRESET_SYMBOLS, STORAGE_KEYS, SYMBOL_PATTERN } from '../utils/constants';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -48,18 +56,10 @@ interface StrategyScanResult {
   timestamp: string;
 }
 
-interface SavedSymbol {
-  symbol: string;
-  isPreset: boolean;
-}
-
-const PRESET_SYMBOLS = ['SPY', 'QQQ', 'IWM'];
-
 const StrategySubscription: React.FC = () => {
-  const [symbols, setSymbols] = useState<SavedSymbol[]>(
-    PRESET_SYMBOLS.map((s) => ({ symbol: s, isPreset: true }))
-  );
+  const [savedSymbols, setSavedSymbols] = useLocalStorage<string[]>(STORAGE_KEYS.SAVED_SYMBOLS_STRATEGY, []);
   const [customSymbolInput, setCustomSymbolInput] = useState('');
+  const [popoverOpen, setPopoverOpen] = useState(false);
   const [dteRange, setDteRange] = useState<[number, number]>([7, 15]);
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<StrategyScanResult[]>([]);
@@ -68,15 +68,40 @@ const StrategySubscription: React.FC = () => {
   const [scanProgress, setScanProgress] = useState(0);
   const [allExpiryDates, setAllExpiryDates] = useState<ExpiryDate[]>([]);
 
+  const addSymbol = (symbol: string) => {
+    const trimmedSymbol = symbol.trim().toUpperCase();
+    if (!trimmedSymbol) {
+      message.warning('请输入股票代码');
+      return;
+    }
+    if (!SYMBOL_PATTERN.test(trimmedSymbol)) {
+      message.warning('股票代码格式不正确');
+      return;
+    }
+    if (savedSymbols.includes(trimmedSymbol)) {
+      message.warning('该股票已添加');
+      return;
+    }
+    const newSymbols = [...savedSymbols, trimmedSymbol];
+    setSavedSymbols(newSymbols);
+    message.success(`已添加 ${trimmedSymbol}`);
+  };
+
+  const removeSymbol = (symbol: string) => {
+    const newSymbols = savedSymbols.filter(s => s !== symbol);
+    setSavedSymbols(newSymbols);
+    message.success(`已删除 ${symbol}`);
+  };
+
   const loadAllExpiryDates = useCallback(async () => {
-    if (symbols.length === 0) {
+    if (savedSymbols.length === 0) {
       setAllExpiryDates([]);
       return;
     }
 
     try {
       const allDates: ExpiryDate[] = [];
-      for (const { symbol } of symbols) {
+      for (const symbol of savedSymbols) {
         try {
           const dates = await fetchExpiryDates(symbol);
           dates.forEach((date) => {
@@ -85,7 +110,6 @@ const StrategySubscription: React.FC = () => {
             }
           });
         } catch {
-          // ignore errors for individual symbols
         }
       }
       allDates.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
@@ -93,7 +117,7 @@ const StrategySubscription: React.FC = () => {
     } catch (error) {
       console.error('Failed to load expiry dates:', error);
     }
-  }, [symbols]);
+  }, [savedSymbols]);
 
   useEffect(() => {
     loadAllExpiryDates();
@@ -102,30 +126,6 @@ const StrategySubscription: React.FC = () => {
   const filteredExpiryDates = allExpiryDates.filter(
     (d) => d.daysToExpiry >= dteRange[0] && d.daysToExpiry <= dteRange[1]
   );
-
-  const addSymbol = () => {
-    const symbol = customSymbolInput.toUpperCase().trim();
-    if (!symbol) {
-      message.warning('请输入股票代码');
-      return;
-    }
-    if (!/^[A-Z]{1,5}$/.test(symbol)) {
-      message.warning('股票代码格式不正确');
-      return;
-    }
-    if (symbols.some((s) => s.symbol === symbol)) {
-      message.warning('该股票已添加');
-      return;
-    }
-    setSymbols([...symbols, { symbol, isPreset: false }]);
-    setCustomSymbolInput('');
-    message.success(`已添加 ${symbol}`);
-  };
-
-  const removeSymbol = (symbol: string) => {
-    setSymbols(symbols.filter((s) => s.symbol !== symbol));
-    message.success(`已移除 ${symbol}`);
-  };
 
   const getRiskLevelColor = (level: string) => {
     switch (level) {
@@ -174,7 +174,7 @@ const StrategySubscription: React.FC = () => {
   };
 
   const scanStrategies = async () => {
-    if (symbols.length === 0) {
+    if (savedSymbols.length === 0) {
       message.warning('请至少添加一个股票代码');
       return;
     }
@@ -188,7 +188,7 @@ const StrategySubscription: React.FC = () => {
       let total = 0;
       let completed = 0;
 
-      for (const { symbol } of symbols) {
+      for (const symbol of savedSymbols) {
         try {
           const expiryDates = await fetchExpiryDates(symbol);
           const filteredExpiries = expiryDates.filter(
@@ -196,11 +196,10 @@ const StrategySubscription: React.FC = () => {
           );
           total += filteredExpiries.length;
         } catch {
-          // ignore
         }
       }
 
-      for (const { symbol } of symbols) {
+      for (const symbol of savedSymbols) {
         try {
           const expiryDates = await fetchExpiryDates(symbol);
           const filteredExpiries = expiryDates.filter(
@@ -224,22 +223,6 @@ const StrategySubscription: React.FC = () => {
                   data.skew,
                   data.maxPain
                 );
-
-                if (symbol === 'IWM' && expiry.date === '2026-03-13') {
-                  console.log('===== IWM 2026-03-13 详细分析 =====');
-                  console.log('策略名称:', recommendation.strategy.name);
-                  console.log('环境类型:', recommendation.environment.type);
-                  console.log('主信号类型:', recommendation.primarySignal.type);
-                  console.log('主信号匹配条件数:', recommendation.primarySignal.matchedConditions, '/', recommendation.primarySignal.totalConditions);
-                  console.log('主信号强度:', recommendation.primarySignal.strength);
-                  console.log('风险等级:', recommendation.riskLevel);
-                  console.log('辅助信号:', recommendation.secondarySignal ? recommendation.secondarySignal.type : '无');
-                  console.log('--- 主信号详细条件 ---');
-                  recommendation.primarySignal.conditions.forEach((cond, idx) => {
-                    console.log(`  ${idx + 1}. ${cond.name}:`, cond.status, '-', cond.description);
-                  });
-                  console.log('==============================');
-                }
 
                 if (recommendation.strategy.name !== '观望/等待信号') {
                   newResults.push({
@@ -352,6 +335,39 @@ const StrategySubscription: React.FC = () => {
     },
   ];
 
+  const savedSymbolsContent = (
+    <div style={{ width: '250px', maxHeight: '400px', overflowY: 'auto' }}>
+      {savedSymbols.length > 0 ? (
+        <List
+          size="small"
+          dataSource={savedSymbols}
+          renderItem={(symbol) => (
+            <List.Item
+              actions={[
+                <Tooltip key="delete" title="删除">
+                  <DeleteOutlined
+                    style={{ color: '#ff4d4f', fontSize: '16px' }}
+                    onClick={() => removeSymbol(symbol)}
+                  />
+                </Tooltip>
+              ]}
+            >
+              <List.Item.Meta
+                title={<span style={{ fontWeight: 600, fontSize: '15px' }}>{symbol}</span>}
+              />
+            </List.Item>
+          )}
+        />
+      ) : (
+        <Empty
+          description="暂无保存的股票"
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+          style={{ padding: '30px 0' }}
+        />
+      )}
+    </div>
+  );
+
   return (
     <div>
       <Title level={4} style={{ marginBottom: '24px' }}>
@@ -394,7 +410,7 @@ const StrategySubscription: React.FC = () => {
                 icon={<SearchOutlined />}
                 onClick={scanStrategies}
                 loading={loading}
-                disabled={symbols.length === 0}
+                disabled={savedSymbols.length === 0}
                 style={{
                   background: loading ? '#d9d9d9' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
                   border: 'none',
@@ -410,42 +426,139 @@ const StrategySubscription: React.FC = () => {
               <Text strong style={{ display: 'block', marginBottom: '12px', fontSize: '14px' }}>
                 股票代码
               </Text>
-              <Space wrap style={{ marginBottom: '16px' }}>
-                {symbols.map(({ symbol, isPreset }) => (
-                  <Tag
-                    key={symbol}
-                    color={isPreset ? 'blue' : 'cyan'}
-                    closable
-                    onClose={() => removeSymbol(symbol)}
-                    style={{
-                      fontSize: '14px',
-                      padding: '6px 16px',
-                      borderRadius: '20px',
-                      boxShadow: '0 2px 4px rgba(0,0,0,0.08)',
-                    }}
-                  >
-                    {symbol}
-                  </Tag>
+              <Space wrap size="small" style={{ marginBottom: '16px' }}>
+                {PRESET_SYMBOLS.map((symbol) => (
+                  <Tooltip key={symbol} title={`扫描 ${symbol} 期权策略`}>
+                    <Tag
+                      color=""
+                      style={{
+                        cursor: 'pointer',
+                        fontSize: '14px',
+                        padding: '6px 16px',
+                        borderRadius: '20px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        fontWeight: 'normal',
+                        boxShadow: 'rgba(0, 0, 0, 0.08) 0px 2px 4px',
+                        transition: 'all 0.2s',
+                      }}
+                      onClick={() => addSymbol(symbol)}
+                    >
+                      {symbol}
+                    </Tag>
+                  </Tooltip>
+                ))}
+
+                {savedSymbols.map((symbol) => (
+                  <Tooltip key={symbol} title={`查看 ${symbol} 期权数据 (点击删除)`}>
+                    <Tag
+                      color="cyan"
+                      style={{
+                        cursor: 'pointer',
+                        fontSize: '14px',
+                        padding: '6px 16px',
+                        borderRadius: '20px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        fontWeight: 'normal',
+                        boxShadow: 'rgba(0, 0, 0, 0.08) 0px 2px 4px',
+                        border: '2px solid transparent',
+                        transition: 'all 0.2s',
+                      }}
+                      onClose={() => removeSymbol(symbol)}
+                      closable
+                    >
+                      {symbol}
+                    </Tag>
+                  </Tooltip>
                 ))}
               </Space>
+
               <Space>
                 <Input
                   placeholder="输入股票代码（如：AAPL）"
                   value={customSymbolInput}
-                  onChange={(e) => setCustomSymbolInput(e.target.value)}
-                  onPressEnter={addSymbol}
-                  style={{ width: '180px', borderRadius: '8px' }}
+                  onChange={(e) => setCustomSymbolInput(e.target.value.toUpperCase().replace(/[^a-zA-Z0-9]/g, ''))}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && customSymbolInput) {
+                      addSymbol(customSymbolInput);
+                      setCustomSymbolInput('');
+                    }
+                  }}
+                  style={{
+                    width: '180px',
+                    borderRadius: '8px',
+                  }}
+                  prefix={<SearchOutlined />}
                   maxLength={5}
+                  disabled={loading}
                   allowClear
                 />
-                <Button
-                  type="default"
-                  icon={<PlusOutlined />}
-                  onClick={addSymbol}
-                  style={{ borderRadius: '8px' }}
+                <Tooltip title="添加自定义股票">
+                  <Button
+                    type="default"
+                    icon={<PlusOutlined />}
+                    onClick={() => {
+                      if (customSymbolInput) {
+                        addSymbol(customSymbolInput);
+                        setCustomSymbolInput('');
+                      } else {
+                        message.info('请先输入股票代码');
+                      }
+                    }}
+                    loading={loading}
+                    style={{
+                      borderRadius: '8px',
+                    }}
+                  >
+                    添加
+                  </Button>
+                </Tooltip>
+                <Popover
+                  content={savedSymbolsContent}
+                  title={
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontWeight: 600 }}>已保存的股票</span>
+                      {savedSymbols.length > 0 && (
+                        <Button
+                          type="link"
+                          size="small"
+                          danger
+                          onClick={() => {
+                            setSavedSymbols([]);
+                            message.success('已清空所有保存的股票');
+                          }}
+                        >
+                          清空全部
+                        </Button>
+                      )}
+                    </div>
+                  }
+                  trigger="click"
+                  open={popoverOpen}
+                  onOpenChange={setPopoverOpen}
+                  placement="bottomLeft"
                 >
-                  添加
-                </Button>
+                  <Badge count={savedSymbols.length} size="small" showZero={false}>
+                    <Tag
+                      color="success"
+                      style={{
+                        cursor: 'pointer',
+                        fontSize: '13px',
+                        padding: '4px 12px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        borderRadius: '20px',
+                      }}
+                    >
+                      <StarFilled />
+                      已保存
+                    </Tag>
+                  </Badge>
+                </Popover>
               </Space>
             </div>
 
@@ -461,7 +574,7 @@ const StrategySubscription: React.FC = () => {
                   min={0}
                   max={45}
                   value={dteRange}
-                  onChange={setDteRange}
+                  onChange={(value) => setDteRange(value as [number, number])}
                   marks={{
                     0: '0',
                     7: '7',

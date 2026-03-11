@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Layout, Typography, Spin, Row, Col, Divider, message, Tabs } from 'antd';
+import { Layout, Typography, Spin, Row, Col, Divider, message, Tabs, Result, Button } from 'antd';
+import { ReloadOutlined } from '@ant-design/icons';
 import SidebarMenu from '../components/SidebarMenu';
 import SymbolSelector from '../components/SymbolSelector';
 import ExpirySelector from '../components/ExpirySelector';
@@ -15,6 +16,7 @@ import Settings from './Settings';
 import StrategySubscription from './StrategySubscription';
 import { fetchOptionAnalysis, fetchExpiryDates } from '../services/optionService';
 import type { OptionAnalysisData, ExpiryDate } from '../types';
+import { getCurrentEasternTime } from '../utils/formatters';
 
 const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -26,157 +28,135 @@ const OptionAnalysis: React.FC = () => {
   const [expiryDates, setExpiryDates] = useState<ExpiryDate[]>([]);
   const [data, setData] = useState<OptionAnalysisData | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('strategy');
-  // 记录数据获取时间
   const [lastFetchTime, setLastFetchTime] = useState<string>('');
 
-  // 加载到期日列表
   const loadExpiryDates = useCallback(async (symbol: string) => {
-    console.log('[Debug] Loading expiry dates for symbol:', symbol);
     try {
       const dates = await fetchExpiryDates(symbol);
-      console.log('[Debug] Loaded expiry dates:', dates);
       setExpiryDates(dates);
-      
-      // 默认选中第一个到期日
+
       if (dates.length > 0 && !selectedExpiry) {
         setSelectedExpiry(dates[0].date);
       }
-      
+
       return dates;
     } catch (error) {
-      console.error('[Debug] Failed to load expiry dates:', error);
-      message.error('加载到期日失败: ' + (error as Error).message);
+      const errorMessage = (error as Error).message;
+      message.error('加载到期日失败: ' + errorMessage);
+      setError(errorMessage);
       return [];
     }
   }, [selectedExpiry]);
 
-  // 加载期权数据
   const loadData = useCallback(async (symbol: string, expiryDate?: string) => {
-    console.log('[Debug] Loading option data for symbol:', symbol, 'expiry:', expiryDate);
     setLoading(true);
+    setError(null);
     try {
-      // 如果指定了到期日，可以传递给API获取特定到期日的数据
       const result = await fetchOptionAnalysis(symbol, expiryDate);
-      console.log('[Debug] Loaded option data:', result);
       setData(result);
-      // 更新数据获取时间（美东时间）
-      const now = new Date();
-      const easternTime = now.toLocaleString('zh-CN', {
-        timeZone: 'America/New_York',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-      });
-      setLastFetchTime(easternTime);
+      setLastFetchTime(getCurrentEasternTime());
     } catch (error) {
-      console.error('[Debug] Failed to load option data:', error);
-      message.error('加载期权数据失败: ' + (error as Error).message);
+      const errorMessage = (error as Error).message;
+      message.error('加载期权数据失败: ' + errorMessage);
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
   }, []);
 
-  // 初始化加载
   useEffect(() => {
-    console.log('[Debug] Initializing with symbol:', selectedSymbol);
     const init = async () => {
       try {
         const dates = await loadExpiryDates(selectedSymbol);
-        // 使用第一个到期日加载数据
         if (dates.length > 0) {
           await loadData(selectedSymbol, dates[0].date);
         } else {
           await loadData(selectedSymbol);
         }
       } catch (error) {
-        console.error('[Debug] Initialization error:', error);
+        console.error('Initialization error:', error);
       }
     };
     init();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 处理股票代码变更
   const handleSymbolChange = (symbol: string) => {
-    console.log('[Debug] Symbol changed to:', symbol);
     setSelectedSymbol(symbol);
-    setSelectedExpiry(''); // 清空选中的到期日
+    setSelectedExpiry('');
     setData(null);
+    setError(null);
   };
 
-  // 处理分析/刷新
   const handleAnalyze = async () => {
-    console.log('[Debug] Analyze button clicked for symbol:', selectedSymbol);
     setLoading(true);
+    setError(null);
     try {
-      // 先加载到期日
       const dates = await loadExpiryDates(selectedSymbol);
-      
-      // 如果有到期日，选中第一个
+
       if (dates.length > 0) {
         setSelectedExpiry(dates[0].date);
-        // 使用选中的到期日加载数据
         await loadData(selectedSymbol, dates[0].date);
       } else {
         await loadData(selectedSymbol);
       }
     } catch (error) {
-      console.error('[Debug] Analyze error:', error);
+      console.error('Analyze error:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  // 处理到期日变更
   const handleExpiryChange = async (date: string) => {
-    console.log('[Debug] Expiry changed to:', date);
     setSelectedExpiry(date);
-    
-    // 到期日变更时，重新加载该到期日的数据
     setLoading(true);
     try {
       await loadData(selectedSymbol, date);
     } catch (error) {
-      console.error('[Debug] Failed to load data for new expiry:', error);
+      console.error('Failed to load data for new expiry:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  // 计算合约数量 - 根据当前选中的到期日
-  const getContractCount = () => {
+  const getContractCount = useCallback(() => {
     if (!data || !data.oiData) return 0;
-    // 每个执行价有 Call 和 Put 两个合约
     return data.oiData.length * 2;
-  };
+  }, [data]);
 
-  // 格式化合约数量显示
-  const formatContractCount = () => {
+  const formatContractCount = useCallback(() => {
     const count = getContractCount();
     return count > 0 ? `${count} 个合约` : '暂无合约数据';
-  };
+  }, [getContractCount]);
 
-  // 获取选中的到期日标签
-  const getSelectedExpiryLabel = () => {
+  const getSelectedExpiryLabel = useCallback(() => {
     const selected = expiryDates.find(d => d.date === selectedExpiry);
     return selected ? selected.label : '';
-  };
+  }, [expiryDates, selectedExpiry]);
 
-  // 计算距离到期天数
-  const getDaysToExpiry = () => {
+  const getDaysToExpiry = useCallback(() => {
     const selected = expiryDates.find(d => d.date === selectedExpiry);
     return selected ? selected.daysToExpiry : 30;
-  };
+  }, [expiryDates, selectedExpiry]);
 
-  // 计算PCR状态
   const pcrStatus = useMemo(() => {
     if (!data) return undefined;
     return data.pcrData?.status;
   }, [data]);
+
+  const renderError = () => (
+    <Result
+      status="error"
+      title="加载失败"
+      subTitle={error}
+      extra={
+        <Button type="primary" icon={<ReloadOutlined />} onClick={handleAnalyze}>
+          重试
+        </Button>
+      }
+    />
+  );
 
   const renderContent = () => {
     if (selectedMenuKey === 'settings') {
@@ -185,6 +165,10 @@ const OptionAnalysis: React.FC = () => {
 
     if (selectedMenuKey === 'strategy-subscription') {
       return <StrategySubscription />;
+    }
+
+    if (error) {
+      return renderError();
     }
 
     return (
@@ -338,13 +322,10 @@ const OptionAnalysis: React.FC = () => {
                     />
                   ),
                 },
-
               ]}
             />
           </>
         ) : null}
-
-
       </>
     );
   };
