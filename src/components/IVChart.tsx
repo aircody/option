@@ -14,7 +14,7 @@ interface IVChartProps {
     tradingImplications?: string[];
     riskWarnings?: string[];
   };
-  optionChain?: unknown[];
+  optionChain?: any[];
   oiData?: unknown[];
   gammaExposure?: number;
   pcr?: number;
@@ -27,9 +27,9 @@ const IVChart: React.FC<IVChartProps> = ({
   vrp,
   ivData,
   optionChain,
-  oiData,
-  gammaExposure,
-  pcr
+  oiData: _oiData,
+  gammaExposure: _gammaExposure,
+  pcr: _pcr
 }) => {
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<echarts.ECharts | null>(null);
@@ -85,7 +85,7 @@ const IVChart: React.FC<IVChartProps> = ({
 
     const initialRange = updateYAxisRange(0, 100);
 
-    const option: echarts.EChartsOption = {
+    const option: any = {
       backgroundColor: 'transparent',
       grid: {
         left: '3%',
@@ -110,11 +110,12 @@ const IVChart: React.FC<IVChartProps> = ({
           color: '#333'
         },
         extraCssText: 'box-shadow: 0 2px 8px rgba(0,0,0,0.15); border-radius: 4px; padding: 8px 12px;',
-        formatter: (params: echarts.TooltipFormatterParams) => {
-          const strike = (params as echarts.TooltipFormatterParamsItem[])[0].axisValue;
-          const callIV = (params as echarts.TooltipFormatterParamsItem[]).find((p) => p.seriesName === 'Call IV')?.value || 0;
-          const putIV = (params as echarts.TooltipFormatterParamsItem[]).find((p) => p.seriesName === 'Put IV')?.value || 0;
-          const atmIV = (params as echarts.TooltipFormatterParamsItem[]).find((p) => p.seriesName === 'ATM IV')?.value || 0;
+        formatter: (params: unknown) => {
+          const p = params as { axisValue: unknown; seriesName: string; value: unknown }[];
+          const strike = p[0].axisValue;
+          const callIV = p.find((item) => item.seriesName === 'Call IV')?.value as number || 0;
+          const putIV = p.find((item) => item.seriesName === 'Put IV')?.value as number || 0;
+          const atmIV = p.find((item) => item.seriesName === 'ATM IV')?.value as number || 0;
           
           return `
             <div style="font-weight: bold; margin-bottom: 8px; border-bottom: 1px solid #f0f0f0; padding-bottom: 4px;">Strike: $${strike}</div>

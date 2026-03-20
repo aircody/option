@@ -17,6 +17,8 @@ export interface OIWall {
   callOI: number;           // Call 持仓量
   putOI: number;            // Put 持仓量
   totalOI: number;          // 总持仓量
+  isCallWall: boolean;      // 是否是 Call Wall (阻力位)
+  isPutWall: boolean;       // 是否是 Put Wall (支撑位)
 }
 
 /**
@@ -31,9 +33,10 @@ export interface StrongestSupportResistance {
  * 识别 OI Walls
  * @param data 持仓数据
  * @param currentPrice 当前价格
+ * @param threshold 阈值倍数，默认为 1.3
  * @returns OI Wall 数组
  */
-export function identifyOIWalls(data: OIData[], currentPrice: number): OIWall[] {
+export function identifyOIWalls(data: OIData[], currentPrice: number, threshold: number = 1.3): OIWall[] {
   if (!data || data.length === 0 || !currentPrice) {
     return [];
   }
@@ -46,7 +49,7 @@ export function identifyOIWalls(data: OIData[], currentPrice: number): OIWall[] 
 
   // 识别 Call Wall（阻力位）：Call OI 显著高于平均且行权价 > 现价
   data
-    .filter(d => d.strike > currentPrice && d.callOI > avgCallOI * 1.3)
+    .filter(d => d.strike > currentPrice && d.callOI > avgCallOI * threshold)
     .forEach(d => {
       walls.push({
         strike: d.strike,
@@ -55,12 +58,14 @@ export function identifyOIWalls(data: OIData[], currentPrice: number): OIWall[] 
         callOI: d.callOI,
         putOI: d.putOI,
         totalOI: d.callOI + d.putOI,
+        isCallWall: true,
+        isPutWall: false,
       });
     });
 
   // 识别 Put Wall（支撑位）：Put OI 显著高于平均且行权价 < 现价
   data
-    .filter(d => d.strike < currentPrice && d.putOI > avgPutOI * 1.3)
+    .filter(d => d.strike < currentPrice && d.putOI > avgPutOI * threshold)
     .forEach(d => {
       walls.push({
         strike: d.strike,
@@ -69,6 +74,8 @@ export function identifyOIWalls(data: OIData[], currentPrice: number): OIWall[] 
         callOI: d.callOI,
         putOI: d.putOI,
         totalOI: d.callOI + d.putOI,
+        isCallWall: false,
+        isPutWall: true,
       });
     });
 

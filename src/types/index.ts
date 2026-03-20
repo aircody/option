@@ -81,10 +81,15 @@ export interface IVAnalysisResult {
 export interface PCRAnalysisResult {
   pcrOI: number;
   pcrVolume: number;
+  totalPutOI: number;
+  totalCallOI: number;
+  totalPutVolume: number;
+  totalCallVolume: number;
   status: 'extreme_bearish' | 'bearish' | 'neutral' | 'bullish' | 'extreme_bullish';
   statusLabel: string;
   description: string;
   tradingImplications: string[];
+  riskWarnings: string[];
 }
 
 export interface GEXAnalysisResult {

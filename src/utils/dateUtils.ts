@@ -173,7 +173,7 @@ export interface ExpiryDateInfo {
 }
 
 export function generateExpiryDateData(
-  symbol: string,
+  _symbol: string,
   startDate: Date = new Date(),
   days: number = 45
 ): ExpiryDateInfo[] {

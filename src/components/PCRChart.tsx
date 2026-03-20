@@ -24,7 +24,7 @@ const getPCRZoneInfo = (pcr: number): PCRZoneInfo => {
   };
 };
 
-const PCRChart: React.FC<PCRChartProps> = ({ oiData, currentPrice, putCallRatio }) => {
+const PCRChart: React.FC<PCRChartProps> = ({ oiData, currentPrice, putCallRatio: _putCallRatio }) => {
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<echarts.ECharts | null>(null);
 
@@ -73,7 +73,7 @@ const PCRChart: React.FC<PCRChartProps> = ({ oiData, currentPrice, putCallRatio 
 
     const initialRange = updateYAxisRange(0, 100);
 
-    const option: echarts.EChartsOption = {
+    const option: any = {
       backgroundColor: 'transparent',
       grid: {
         left: '3%',

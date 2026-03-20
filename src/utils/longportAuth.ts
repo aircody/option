@@ -81,7 +81,7 @@ export async function generateHeaders(
  * 使用 Python 后端服务
  */
 export async function longportRequest<T>(
-  baseUrl: string,
+  _baseUrl: string,
   appKey: string,
   appSecret: string,
   accessToken: string,

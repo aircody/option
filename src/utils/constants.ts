@@ -2,6 +2,7 @@ export const STORAGE_KEYS = {
   SAVED_SYMBOLS_OPTION: 'option_analysis_saved_symbols',
   SAVED_SYMBOLS_STRATEGY: 'strategy_subscription_saved_symbols',
   LAST_SYMBOL: 'option_analysis_last_symbol',
+  STRATEGY_SCAN_HISTORY: 'strategy_scan_history',
 } as const;
 
 export const PRESET_SYMBOLS = ['SPY', 'QQQ', 'IWM'] as const;

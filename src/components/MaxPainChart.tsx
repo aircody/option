@@ -9,15 +9,15 @@ interface MaxPainChartProps {
   maxPainStrike: number;
   currentPrice?: number; // 现价/最新价
   daysToExpiry?: number;
-  oiData?: OIData[]; // 用于计算 IV
+  oiData?: OIData[];
 }
 
 const MaxPainChart: React.FC<MaxPainChartProps> = ({ 
   data, 
   maxPainStrike,
   currentPrice,
-  daysToExpiry = 30,
-  oiData
+  daysToExpiry: _daysToExpiry,
+  oiData: _oiData
 }) => {
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<echarts.ECharts | null>(null);
@@ -56,7 +56,7 @@ const MaxPainChart: React.FC<MaxPainChartProps> = ({
       });
     }
 
-    const option: echarts.EChartsOption = {
+    const option: any = {
       tooltip: {
         trigger: 'axis',
         formatter: (params: unknown) => {

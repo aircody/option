@@ -78,8 +78,8 @@ export function convertApiDataToOIData(apiData: ApiDataItem[]): OIData[] {
   const strikeMap = new Map<number, { callOI: number; putOI: number }>();
 
   for (const item of apiData) {
-    const strike = parseFloat(item.strike_price || item.strike || 0);
-    const oi = parseInt(item.open_interest || item.oi || 0, 10);
+    const strike = Number(item.strike_price || item.strike || 0);
+    const oi = Number(item.open_interest || item.oi || 0);
     const direction = item.direction || '';
 
     if (!strikeMap.has(strike)) {

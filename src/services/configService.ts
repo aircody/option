@@ -7,7 +7,13 @@ export const getApiConfig = (): ApiConfig => {
   try {
     const stored = localStorage.getItem(CONFIG_KEY);
     if (stored) {
-      return { ...defaultApiConfig, ...JSON.parse(stored) };
+      const parsed = JSON.parse(stored);
+      // 确保默认使用 Mock 数据模式，除非用户明确配置了真实 API
+      return { 
+        ...defaultApiConfig, 
+        ...parsed,
+        useMock: parsed.useMock !== undefined ? parsed.useMock : true
+      };
     }
   } catch (error) {
     console.error('Failed to load config:', error);

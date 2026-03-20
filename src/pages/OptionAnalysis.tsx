@@ -37,8 +37,8 @@ const OptionAnalysis: React.FC = () => {
       const dates = await fetchExpiryDates(symbol);
       setExpiryDates(dates);
 
-      if (dates.length > 0 && !selectedExpiry) {
-        setSelectedExpiry(dates[0].date);
+      if (dates.length > 0) {
+        setSelectedExpiry(prev => prev || dates[0].date);
       }
 
       return dates;
@@ -48,7 +48,7 @@ const OptionAnalysis: React.FC = () => {
       setError(errorMessage);
       return [];
     }
-  }, [selectedExpiry]);
+  }, []);
 
   const loadData = useCallback(async (symbol: string, expiryDate?: string) => {
     setLoading(true);
@@ -80,7 +80,7 @@ const OptionAnalysis: React.FC = () => {
       }
     };
     init();
-  }, []);
+  }, [loadExpiryDates, loadData, selectedSymbol]);
 
   const handleSymbolChange = (symbol: string) => {
     setSelectedSymbol(symbol);

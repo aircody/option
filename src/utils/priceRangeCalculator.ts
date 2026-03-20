@@ -82,29 +82,4 @@ export function filterStrikesByPriceRange(
   return filteredData;
 }
 
-/**
- * 从期权数据中估算平均 IV
- * @param data 期权数据
- * @returns 平均 IV（小数）
- */
-export function estimateAverageIV(data: OIData[]): number {
-  if (!data || data.length === 0) {
-    return 0.3; // 默认 30%
-  }
 
-  let totalIV = 0;
-  let count = 0;
-
-  for (const item of data) {
-    if (item.callIV && item.callIV > 0) {
-      totalIV += item.callIV;
-      count++;
-    }
-    if (item.putIV && item.putIV > 0) {
-      totalIV += item.putIV;
-      count++;
-    }
-  }
-
-  return count > 0 ? totalIV / count : 0.3;
-}

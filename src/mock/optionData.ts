@@ -44,7 +44,7 @@ export const generateMockOIData = (basePrice: number): { strike: number; callOI:
 /**
  * 使用新的 Max Pain 计算逻辑生成数据
  */
-export const generateMockMaxPainData = (basePrice: number, oiData: { strike: number; callOI: number; putOI: number }[]): { strike: number; totalPain: number }[] => {
+export const generateMockMaxPainData = (_basePrice: number, oiData: { strike: number; callOI: number; putOI: number }[]): { strike: number; totalPain: number }[] => {
   // 使用新的 Max Pain 计算工具
   const { maxPainCurve } = calculateMaxPain(oiData);
   return maxPainCurve;

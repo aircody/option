@@ -42,7 +42,7 @@ const GEXChart: React.FC<GEXChartProps> = ({ oiData, currentPrice }) => {
     const putGEXValues = gexData.map(d => d.putGEX / 1e9);
     const totalGEXValues = gexData.map(d => d.totalGEX / 1e9);
 
-    const option: echarts.EChartsOption = {
+    const option: any = {
       backgroundColor: 'transparent',
       grid: {
         left: '3%',
@@ -67,11 +67,12 @@ const GEXChart: React.FC<GEXChartProps> = ({ oiData, currentPrice }) => {
           color: '#333'
         },
         extraCssText: 'box-shadow: 0 2px 8px rgba(0,0,0,0.15); border-radius: 4px; padding: 8px 12px;',
-        formatter: (params: echarts.TooltipFormatterParams) => {
-          const strike = (params as echarts.TooltipFormatterParamsItem[])[0].axisValue;
-          const totalGEX = (params as echarts.TooltipFormatterParamsItem[]).find((p) => p.seriesName === 'Total GEX')?.value || 0;
-          const callGEX = (params as echarts.TooltipFormatterParamsItem[]).find((p) => p.seriesName === 'Call GEX')?.value || 0;
-          const putGEX = (params as echarts.TooltipFormatterParamsItem[]).find((p) => p.seriesName === 'Put GEX')?.value || 0;
+        formatter: (params: unknown) => {
+          const p = params as { axisValue: unknown; seriesName: string; value: unknown }[];
+          const strike = p[0].axisValue;
+          const totalGEX = p.find((item) => item.seriesName === 'Total GEX')?.value as number || 0;
+          const callGEX = p.find((item) => item.seriesName === 'Call GEX')?.value as number || 0;
+          const putGEX = p.find((item) => item.seriesName === 'Put GEX')?.value as number || 0;
           
           return `
             <div style="font-weight: bold; margin-bottom: 8px; border-bottom: 1px solid #f0f0f0; padding-bottom: 4px;">Strike: $${strike}</div>

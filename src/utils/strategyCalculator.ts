@@ -9,6 +9,7 @@ import { analyzeGEX } from './gexCalculator';
 import { analyzePCR } from './pcrCalculator';
 import { analyzeIV } from './ivCalculator';
 import { calculateMaxPain } from './maxPainCalculator';
+import { identifyOIWalls } from './oiWallCalculator';
 
 export interface MarketEnvironment {
   type: 'low_volatility' | 'high_volatility' | 'extreme_low' | 'extreme_high';
@@ -56,7 +57,7 @@ export interface StrategyRecommendation {
  */
 export function determineMarketEnvironment(
   gex: number,
-  atmIV: number,
+  _atmIV: number,
   ivPercentile: number
 ): MarketEnvironment {
   const gexBillions = gex / 1e9;
@@ -125,7 +126,7 @@ export function analyzeBullishSignal(
   callWalls: number[],
   putWalls: number[]
 ): TradingSignal {
-  const conditions = [];
+  const conditions: { name: string; status: 'met' | 'partial' | 'not_met'; description: string }[] = [];
   let matchedCount = 0;
   
   // 趋势条件
@@ -216,7 +217,7 @@ export function analyzeBearishSignal(
   callWalls: number[],
   putWalls: number[]
 ): TradingSignal {
-  const conditions = [];
+  const conditions: { name: string; status: 'met' | 'partial' | 'not_met'; description: string }[] = [];
   let matchedCount = 0;
   
   const gexBillions = gex / 1e9;
@@ -306,7 +307,7 @@ export function analyzeRangeSignal(
   putWalls: number[],
   maxPain: number
 ): TradingSignal {
-  const conditions = [];
+  const conditions: { name: string; status: 'met' | 'partial' | 'not_met'; description: string }[] = [];
   let matchedCount = 0;
   
   const gexBillions = gex / 1e9;
@@ -411,8 +412,8 @@ export function generateStrategyRecommendation(
   
   const { maxPain } = maxPainData !== undefined ? { maxPain: maxPainData } : calculateMaxPain(oiData);
   
-  // 识别 OI Walls（简化实现）
-  const oiWalls = identifyOIWallsSimple(oiData, currentPrice);
+  // 识别 OI Walls
+  const oiWalls = identifyOIWalls(oiData, currentPrice, 1.5);
   const callWalls = oiWalls.filter(w => w.type === 'resistance').map(w => w.strike);
   const putWalls = oiWalls.filter(w => w.type === 'support').map(w => w.strike);
   
@@ -561,50 +562,6 @@ export function getRiskLevelColor(level: StrategyRecommendation['riskLevel']): s
     case 'extreme': return '#ff4d4f';
     default: return '#999';
   }
-}
-
-/**
- * 简化版 OI Wall 识别
- * 识别 Call Wall（阻力位）和 Put Wall（支撑位）
- */
-function identifyOIWallsSimple(
-  oiData: { strike: number; callOI: number; putOI: number }[],
-  currentPrice: number
-): { strike: number; type: 'resistance' | 'support'; strength: number }[] {
-  if (!oiData || oiData.length === 0) {
-    return [];
-  }
-
-  const walls: { strike: number; type: 'resistance' | 'support'; strength: number }[] = [];
-
-  // 计算平均 OI
-  const avgCallOI = oiData.reduce((sum, d) => sum + d.callOI, 0) / oiData.length;
-  const avgPutOI = oiData.reduce((sum, d) => sum + d.putOI, 0) / oiData.length;
-
-  // 识别 Call Wall（阻力位）：Call OI 显著高于平均且行权价 > 现价
-  oiData
-    .filter(d => d.strike > currentPrice && d.callOI > avgCallOI * 1.5)
-    .forEach(d => {
-      walls.push({
-        strike: d.strike,
-        type: 'resistance',
-        strength: d.callOI / avgCallOI,
-      });
-    });
-
-  // 识别 Put Wall（支撑位）：Put OI 显著高于平均且行权价 < 现价
-  oiData
-    .filter(d => d.strike < currentPrice && d.putOI > avgPutOI * 1.5)
-    .forEach(d => {
-      walls.push({
-        strike: d.strike,
-        type: 'support',
-        strength: d.putOI / avgPutOI,
-      });
-    });
-
-  // 按强度排序
-  return walls.sort((a, b) => b.strength - a.strength);
 }
 
 /**

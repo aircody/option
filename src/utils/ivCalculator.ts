@@ -66,9 +66,9 @@ export function extractIVDataFromApiOption(apiOptionData: ApiOptionItem[], under
   const result: IVData[] = [];
 
   for (const item of apiOptionData) {
-    const strike = parseFloat(item.strike || 0);
-    const callIV = parseFloat(item.callIV || 0);
-    const putIV = parseFloat(item.putIV || 0);
+    const strike = Number(item.strike || 0);
+    const callIV = Number(item.callIV || 0);
+    const putIV = Number(item.putIV || 0);
     const avgIV = (callIV + putIV) / 2 || callIV || putIV;
     const distanceFromATM = Math.abs((strike - underlyingPrice) / underlyingPrice);
 
@@ -99,8 +99,8 @@ export function extractIVData(apiData: ApiDataItem[], underlyingPrice: number): 
   const strikeMap = new Map<number, { callIV: number; putIV: number }>();
 
   for (const item of apiData) {
-    const strike = parseFloat(item.strike_price || item.strike || 0);
-    const iv = parseFloat(item.implied_volatility || item.iv || 0);
+    const strike = Number(item.strike_price || item.strike || 0);
+    const iv = Number(item.implied_volatility || item.iv || 0);
     const direction = item.direction || '';
 
     if (!strikeMap.has(strike)) {

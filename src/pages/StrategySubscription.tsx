@@ -22,6 +22,7 @@ import {
   Popover,
   List,
   Badge,
+  Tabs,
 } from 'antd';
 import {
   SearchOutlined,
@@ -35,6 +36,8 @@ import {
   RiseOutlined,
   StarFilled,
   DeleteOutlined,
+  HistoryOutlined,
+  EyeOutlined,
 } from '@ant-design/icons';
 import { fetchOptionAnalysis, fetchExpiryDates } from '../services/optionService';
 import { generateStrategyRecommendation } from '../utils/strategyCalculator';
@@ -56,6 +59,16 @@ interface StrategyScanResult {
   timestamp: string;
 }
 
+interface ScanHistoryRecord {
+  id: string;
+  scanTime: string;
+  dteRange: [number, number];
+  symbols: string[];
+  results: StrategyScanResult[];
+}
+
+const MAX_HISTORY_COUNT = 10;
+
 const StrategySubscription: React.FC = () => {
   const [savedSymbols, setSavedSymbols] = useLocalStorage<string[]>(STORAGE_KEYS.SAVED_SYMBOLS_STRATEGY, []);
   const [customSymbolInput, setCustomSymbolInput] = useState('');
@@ -67,6 +80,9 @@ const StrategySubscription: React.FC = () => {
   const [filterSymbol, setFilterSymbol] = useState<string>('');
   const [scanProgress, setScanProgress] = useState(0);
   const [allExpiryDates, setAllExpiryDates] = useState<ExpiryDate[]>([]);
+  const [scanHistory, setScanHistory] = useLocalStorage<ScanHistoryRecord[]>(STORAGE_KEYS.STRATEGY_SCAN_HISTORY, []);
+  const [activeTab, setActiveTab] = useState<string>('current');
+  const [selectedHistoryRecord, setSelectedHistoryRecord] = useState<ScanHistoryRecord | null>(null);
 
   const addSymbol = (symbol: string) => {
     const trimmedSymbol = symbol.trim().toUpperCase();
@@ -85,6 +101,20 @@ const StrategySubscription: React.FC = () => {
     const newSymbols = [...savedSymbols, trimmedSymbol];
     setSavedSymbols(newSymbols);
     message.success(`已添加 ${trimmedSymbol}`);
+  };
+
+  const saveScanToHistory = (scanResults: StrategyScanResult[]) => {
+    const newRecord: ScanHistoryRecord = {
+      id: Date.now().toString(),
+      scanTime: new Date().toLocaleString('zh-CN'),
+      dteRange: [...dteRange],
+      symbols: [...savedSymbols],
+      results: scanResults,
+    };
+
+    const updatedHistory = [newRecord, ...scanHistory].slice(0, MAX_HISTORY_COUNT);
+    setScanHistory(updatedHistory);
+    message.success(`扫描结果已保存 (历史记录: ${updatedHistory.length}/${MAX_HISTORY_COUNT})`);
   };
 
   const removeSymbol = (symbol: string) => {
@@ -109,7 +139,8 @@ const StrategySubscription: React.FC = () => {
               allDates.push(date);
             }
           });
-        } catch {
+        } catch (error) {
+          console.error(`Failed to fetch expiry dates for ${symbol}:`, error);
         }
       }
       allDates.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
@@ -195,7 +226,8 @@ const StrategySubscription: React.FC = () => {
             (d) => d.daysToExpiry >= dteRange[0] && d.daysToExpiry <= dteRange[1]
           );
           total += filteredExpiries.length;
-        } catch {
+        } catch (error) {
+          console.error(`Failed to fetch expiry dates for ${symbol}:`, error);
         }
       }
 
@@ -249,6 +281,7 @@ const StrategySubscription: React.FC = () => {
       }
 
       setResults(newResults);
+      saveScanToHistory(newResults);
       message.success(
         newResults.length > 0
           ? `扫描完成，发现 ${newResults.length} 个策略`
@@ -681,83 +714,209 @@ const StrategySubscription: React.FC = () => {
         </Col>
       </Row>
 
-      {results.length > 0 && (
-        <Card
-          title={
-            <Space>
-              <CheckCircleOutlined style={{ color: '#52c41a' }} />
-              <span>扫描结果</span>
-              <Tag color="green" style={{ fontSize: '12px' }}>
-                {filteredResults.length} 个策略
-              </Tag>
-            </Space>
-          }
-          style={{ marginTop: '16px' }}
-          headStyle={{ background: '#f6ffed' }}
-          extra={
-            <Space>
-              <Select
-                placeholder="筛选策略"
-                style={{ width: '220px' }}
-                value={filterStrategy}
-                onChange={setFilterStrategy}
-                allowClear
-                size="middle"
-              >
-                {uniqueStrategies.map((s) => (
-                  <Option key={s} value={s}>
-                    {s}
-                  </Option>
-                ))}
-              </Select>
-              <Select
-                placeholder="筛选股票"
-                style={{ width: '140px' }}
-                value={filterSymbol}
-                onChange={setFilterSymbol}
-                allowClear
-                size="middle"
-              >
-                {uniqueSymbols.map((s) => (
-                  <Option key={s} value={s}>
-                    {s}
-                  </Option>
-                ))}
-              </Select>
-              <Button
-                onClick={() => {
-                  setFilterStrategy('');
-                  setFilterSymbol('');
-                }}
-                size="middle"
-              >
-                重置
-              </Button>
-            </Space>
-          }
-        >
-          <Spin spinning={loading}>
-            {filteredResults.length === 0 ? (
+      <Card style={{ marginTop: '16px' }}>
+        <Tabs
+          activeKey={activeTab}
+          onChange={setActiveTab}
+          items={[
+            {
+              key: 'current',
+              label: (
+                <Space>
+                  <CheckCircleOutlined />
+                  <span>当前结果</span>
+                  {results.length > 0 && (
+                    <Tag color="green" style={{ fontSize: '11px' }}>
+                      {results.length}
+                    </Tag>
+                  )}
+                </Space>
+              ),
+            },
+            {
+              key: 'history',
+              label: (
+                <Space>
+                  <HistoryOutlined />
+                  <span>历史记录</span>
+                  {scanHistory.length > 0 && (
+                    <Tag color="blue" style={{ fontSize: '11px' }}>
+                      {scanHistory.length}/{MAX_HISTORY_COUNT}
+                    </Tag>
+                  )}
+                </Space>
+              ),
+            },
+          ]}
+        />
+
+        {activeTab === 'current' && (
+          <div>
+            {results.length === 0 ? (
               <Empty
-                description="没有符合筛选条件的结果"
+                description='暂无扫描结果，请点击"开始扫描"'
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
+                style={{ padding: '40px 0' }}
               />
             ) : (
-              <Table
-                columns={columns}
-                dataSource={filteredResults}
-                rowKey={(r) => `${r.symbol}-${r.expiryDate}`}
-                pagination={{
-                  pageSize: 10,
-                  showSizeChanger: true,
-                  showTotal: (total) => `共 ${total} 条`,
-                }}
-                size="middle"
-              />
+              <div>
+                <div style={{ marginBottom: '16px', display: 'flex', justifyContent: 'flex-end' }}>
+                  <Space>
+                    <Select
+                      placeholder="筛选策略"
+                      style={{ width: '220px' }}
+                      value={filterStrategy}
+                      onChange={setFilterStrategy}
+                      allowClear
+                      size="middle"
+                    >
+                      {uniqueStrategies.map((s) => (
+                        <Option key={s} value={s}>
+                          {s}
+                        </Option>
+                      ))}
+                    </Select>
+                    <Select
+                      placeholder="筛选股票"
+                      style={{ width: '140px' }}
+                      value={filterSymbol}
+                      onChange={setFilterSymbol}
+                      allowClear
+                      size="middle"
+                    >
+                      {uniqueSymbols.map((s) => (
+                        <Option key={s} value={s}>
+                          {s}
+                        </Option>
+                      ))}
+                    </Select>
+                    <Button
+                      onClick={() => {
+                        setFilterStrategy('');
+                        setFilterSymbol('');
+                      }}
+                      size="middle"
+                    >
+                      重置
+                    </Button>
+                  </Space>
+                </div>
+                <Spin spinning={loading}>
+                  {filteredResults.length === 0 ? (
+                    <Empty
+                      description="没有符合筛选条件的结果"
+                      image={Empty.PRESENTED_IMAGE_SIMPLE}
+                    />
+                  ) : (
+                    <Table
+                      columns={columns}
+                      dataSource={filteredResults}
+                      rowKey={(r) => `${r.symbol}-${r.expiryDate}`}
+                      pagination={{
+                        pageSize: 10,
+                        showSizeChanger: true,
+                        showTotal: (total) => `共 ${total} 条`,
+                      }}
+                      size="middle"
+                    />
+                  )}
+                </Spin>
+              </div>
             )}
-          </Spin>
-        </Card>
-      )}
+          </div>
+        )}
+
+        {activeTab === 'history' && (
+          <div>
+            {scanHistory.length === 0 ? (
+              <Empty
+                description="暂无历史记录，扫描后将自动保存"
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                style={{ padding: '40px 0' }}
+              />
+            ) : (
+              <div>
+                {selectedHistoryRecord ? (
+                  <div>
+                    <div style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <Button
+                        type="link"
+                        icon={<HistoryOutlined />}
+                        onClick={() => setSelectedHistoryRecord(null)}
+                      >
+                        返回历史记录列表
+                      </Button>
+                      <div>
+                        <Space>
+                          <Tag color="blue">
+                            <ClockCircleOutlined /> {selectedHistoryRecord.scanTime}
+                          </Tag>
+                          <Tag color="cyan">
+                            {selectedHistoryRecord.dteRange[0]}-{selectedHistoryRecord.dteRange[1]} DTE
+                          </Tag>
+                          <Tag color="purple">
+                            {selectedHistoryRecord.symbols.join(', ')}
+                          </Tag>
+                        </Space>
+                      </div>
+                    </div>
+                    <Table
+                      columns={columns}
+                      dataSource={selectedHistoryRecord.results}
+                      rowKey={(r) => `${r.symbol}-${r.expiryDate}`}
+                      pagination={{
+                        pageSize: 10,
+                        showSizeChanger: true,
+                        showTotal: (total) => `共 ${total} 条`,
+                      }}
+                      size="middle"
+                    />
+                  </div>
+                ) : (
+                  <List
+                    dataSource={scanHistory}
+                    renderItem={(record) => (
+                      <List.Item
+                        actions={[
+                          <Button
+                            type="link"
+                            icon={<EyeOutlined />}
+                            onClick={() => setSelectedHistoryRecord(record)}
+                          >
+                            查看
+                          </Button>,
+                        ]}
+                      >
+                        <List.Item.Meta
+                          avatar={<HistoryOutlined style={{ fontSize: '24px', color: '#1890ff' }} />}
+                          title={
+                            <Space>
+                              <Text strong>{record.scanTime}</Text>
+                              <Tag color="green" style={{ fontSize: '11px' }}>
+                                {record.results.length} 个策略
+                              </Tag>
+                            </Space>
+                          }
+                          description={
+                            <Space>
+                              <Text type="secondary" style={{ fontSize: '12px' }}>
+                                DTE: {record.dteRange[0]}-{record.dteRange[1]}
+                              </Text>
+                              <Text type="secondary" style={{ fontSize: '12px' }}>
+                                股票: {record.symbols.join(', ')}
+                              </Text>
+                            </Space>
+                          }
+                        />
+                      </List.Item>
+                    )}
+                  />
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </Card>
     </div>
   );
 };

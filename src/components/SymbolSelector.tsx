@@ -143,7 +143,7 @@ const SymbolSelector: React.FC<SymbolSelectorProps> = ({
     </div>
   );
 
-  const isPresetSymbol = PRESET_SYMBOLS.includes(selectedSymbol as any);
+  const isPresetSymbol = (PRESET_SYMBOLS as readonly string[]).includes(selectedSymbol);
   const showSelectedCustomSymbol = !isPresetSymbol && selectedSymbol;
   const isSaved = savedSymbols.includes(selectedSymbol);
 
@@ -193,7 +193,7 @@ const SymbolSelector: React.FC<SymbolSelectorProps> = ({
               onClick={() => handleTagClick(symbol)}
               onClose={(e) => {
                 e?.stopPropagation();
-                removeSavedSymbol(symbol, e as any);
+                removeSavedSymbol(symbol, e as React.MouseEvent);
               }}
               closable
             >

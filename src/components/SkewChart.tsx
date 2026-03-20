@@ -34,9 +34,9 @@ const SkewChart: React.FC<SkewChartProps> = ({
   ivData,
   optionChain,
   pcrStatus,
-  oiData,
-  gammaExposure,
-  pcr
+  oiData: _oiData,
+  gammaExposure: _gammaExposure,
+  pcr: _pcr
 }) => {
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<echarts.ECharts | null>(null);
@@ -115,7 +115,7 @@ const SkewChart: React.FC<SkewChartProps> = ({
     const callSkewValues = chartData.map(d => d.callSkew);
     const putSkewValues = chartData.map(d => d.putSkew);
 
-    const option: echarts.EChartsOption = {
+    const option: any = {
       backgroundColor: 'transparent',
       grid: {
         left: '3%',
